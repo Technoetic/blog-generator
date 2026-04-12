@@ -34,6 +34,66 @@ class BlogAssembler {
 		return `<div class="blog-content">${html}</div>`;
 	}
 
+	// structure_mapping → ASCII 박스 다이어그램 마크다운 (결정론적 fallback).
+	static buildAsciiDiagram(structureMapping) {
+		if (!structureMapping || structureMapping.length === 0) return "";
+		const visualLen = (s) => {
+			let len = 0;
+			for (const ch of s) len += /[가-힣ㄱ-ㅎㅏ-ㅣ一-龯]/.test(ch) ? 2 : 1;
+			return len;
+		};
+		const pad = (s, n) => s + " ".repeat(Math.max(0, n - visualLen(s)));
+		const maxTech = Math.min(20, Math.max(...structureMapping.map((m) => visualLen(m.tech || ""))));
+		const maxAna = Math.min(20, Math.max(...structureMapping.map((m) => visualLen(m.analogy || ""))));
+		const techBorder = "+" + "-".repeat(maxTech + 2) + "+";
+		const anaBorder = "+" + "-".repeat(maxAna + 2) + "+";
+		const lines = [];
+		for (const m of structureMapping.slice(0, 5)) {
+			const tech = (m.tech || "").substring(0, 20);
+			const ana = (m.analogy || "").substring(0, 20);
+			lines.push(`${techBorder}      ${anaBorder}`);
+			lines.push(`| ${pad(tech, maxTech)} | ---> | ${pad(ana, maxAna)} |`);
+			lines.push(`${techBorder}      ${anaBorder}`);
+			lines.push("");
+		}
+		return "```\n" + lines.join("\n") + "\n```";
+	}
+
+	// 본문에 ASCII 다이어그램이 부족하면 결정론적 fallback 삽입.
+	static ensureAsciiDiagrams(body, contextPacket) {
+		if (!body) return body;
+		const codeBlocks = body.match(/```[a-zA-Z]*\n[\s\S]*?```/g) || [];
+		let asciiCount = 0;
+		for (const cb of codeBlocks) {
+			const inner = cb.replace(/```[a-zA-Z]*\n/, "").replace(/```$/, "");
+			const asciiChars = (inner.match(/[─━│┃┌┐└┘├┤┬┴┼+|\->=<^v↑↓→←]/g) || []).length;
+			const hasBox = /[+\-]{3,}/.test(inner) || /[─━]{3,}/.test(inner);
+			const hasArrow = inner.includes("->") || inner.includes("-->") || inner.includes("→");
+			if (asciiChars >= 8 && (hasBox || hasArrow)) asciiCount++;
+		}
+		if (asciiCount >= 2) return body;
+
+		const need = 2 - asciiCount;
+		const mapping = contextPacket?.structure_mapping || [];
+		if (mapping.length === 0) return body;
+
+		const fallbackDiagrams = [];
+		const half = Math.ceil(mapping.length / 2);
+		for (let i = 0; i < need; i++) {
+			const slice = i === 0 ? mapping.slice(0, half) : mapping.slice(half);
+			if (slice.length === 0) continue;
+			fallbackDiagrams.push("\n\n### 한눈에 보는 매핑\n\n" + BlogAssembler.buildAsciiDiagram(slice));
+		}
+
+		// 본문 끝에서 마지막 ## 헤딩 직전에 삽입
+		const headings = [...body.matchAll(/^##\s/gm)];
+		if (headings.length >= 2) {
+			const insertPos = headings[headings.length - 1].index;
+			return body.slice(0, insertPos) + fallbackDiagrams.join("\n") + "\n\n" + body.slice(insertPos);
+		}
+		return body + fallbackDiagrams.join("\n");
+	}
+
 	// 본문을 글자 수 중간점에서 가장 가까운 ## 또는 ### 헤딩으로 분할.
 	// front_half/back_half 둘 다 비어있지 않도록 보장.
 	static splitBody(body) {

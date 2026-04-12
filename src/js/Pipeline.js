@@ -396,6 +396,15 @@ A1: fitness_score 7이상, A2: mapping 완전성, A3: 반례 3개이상, A4: 세
 			const tooShort = bodyLen < 2500;
 			const noAscii = ascii < 2;
 			if (!tooShort && !noAscii) return; // 모두 통과
+			if (attempt === 1 && noAscii && !tooShort) {
+				// 마지막 시도도 ASCII 부족 → 결정론적 fallback 삽입 (100% 보장)
+				console.warn("재시도 2회 후에도 ASCII 부족 → 결정론적 fallback 삽입");
+				this.results.blog.body = BlogAssembler.ensureAsciiDiagrams(
+					body,
+					this.results.contextPacket,
+				);
+				return;
+			}
 
 			const reasons = [];
 			if (tooShort) reasons.push(`본문이 너무 짧음(${bodyLen}자, 최소 4000자 필요)`);
