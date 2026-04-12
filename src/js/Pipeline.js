@@ -198,9 +198,15 @@ ${researchContext || "조사 결과 없음 — 모델 지식으로 진행"}
 3. 반례 스트레스 테스트: 3개 이상
 4. 최종 출력: 검증된 구조 매핑표 + 비유 세계관 (300자 이내)
 
+🚨 절대 규칙:
+- 컨텍스트 패킷의 topic/confirmed_analogy/structure_mapping을 그대로 신뢰하고 활용하라.
+- "정보 부족", "확인할 수 없습니다" 같은 거부 응답 금지. 컨텍스트 패킷에 모든 정보가 있다.
+- 사전 지식으로 임의의 기술 용어(OpenCL 등)로 대체 금지. topic 필드의 명칭을 그대로 사용하라.
+
 중요: 모든 출력(confirmed_analogy, worldview, structure_mapping 등)은 반드시 한국어로 작성하라.`,
 				[JSON.stringify(this.results.contextPacket)],
 				{
+					model: Config.WRITER_MODEL,
 					thinking_budget: 2048,
 					schema_name: "analogy_design",
 					response_schema: {

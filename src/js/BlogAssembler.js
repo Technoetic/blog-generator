@@ -8,10 +8,21 @@ class BlogAssembler {
 			'<div style="text-align:center;padding:16px 0;"><span style="background:#667eea22;border:1px dashed #667eea;border-radius:8px;padding:8px 20px;font-size:13px;color:#667eea;">🖼️ Image: $1</span></div>',
 		);
 
+		// 한글-** 경계 보정: marked의 GFM은 단어 경계를 ASCII 기준으로 봄.
+		// "**한글**한글" 같은 패턴은 변환 안 되므로 marked 호출 전에 직접 strong 치환.
+		// (코드블록 보호: 코드블록 위치를 마스킹 후 변환 후 복원)
+		const codeBlockPlaceholders = [];
+		let preprocessed = processed.replace(/```[\s\S]*?```/g, (m) => {
+			codeBlockPlaceholders.push(m);
+			return `\u0000CB${codeBlockPlaceholders.length - 1}\u0000`;
+		});
+		preprocessed = preprocessed.replace(/\*\*([^*\n]+?)\*\*/g, "<strong>$1</strong>");
+		preprocessed = preprocessed.replace(/\u0000CB(\d+)\u0000/g, (_, i) => codeBlockPlaceholders[Number(i)]);
+
 		// Blogger는 <style> 태그를 sanitize해서 CSS가 본문 텍스트로 노출됨.
 		// 인라인 style 속성만 통과되므로 marked 출력 후 주요 태그에 직접 주입.
 		// marked는 종종 align 같은 속성을 붙이므로 정규식이 속성 유무 모두 매칭해야 함.
-		let html = marked.parse(processed);
+		let html = marked.parse(preprocessed);
 		const inject = (tag, style) => {
 			// <tag> 또는 <tag attr="..."> 둘 다 매칭. 이미 style 있으면 건드리지 않음.
 			const re = new RegExp(`<${tag}(\\s+[^>]*)?>`, "g");
