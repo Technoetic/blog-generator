@@ -317,11 +317,19 @@ A1: fitness_score 7이상, A2: mapping 완전성, A3: 반례 3개이상, A4: 세
 				ApiClient.callAgent(
 					`당신은 비유 블로그 전문 작가입니다. 풍부한 시각 요소가 포함된 한국어 블로그를 작성합니다.
 ## 소제목 규칙: 기계적 라벨("핵심 정리","대응표","마무리") 금지. 비유 스토리에서 자연스러운 한국어 제목 사용.
-## 시각화: 테이블 2+, ASCII 다이어그램 2+, 인용블록 3+, 구분선 4+, 소제목 6+
+## 시각화: 테이블 2+, mermaid 다이어그램 2+, 인용블록 3+, 구분선 4+, 소제목 6+
 ## 분량: 친근 3000~5000 / 전문 4000~6000 / 유머 2500~4000
 
 ## 절대 규칙 (렌더링 깨짐 방지)
-- ASCII 다이어그램(화살표, 박스, 파이프 문자 등)은 반드시 코드블록으로 감싸라. 코드블록 밖에 | 문자를 다이어그램 용도로 사용 금지.
+- 시각 다이어그램은 반드시 mermaid 코드블록으로 작성하라:
+  \`\`\`mermaid
+  graph TD
+    A[사용자] --> B[OpenClaw 집사]
+    B --> C[스마트 조명]
+    B --> D[로봇 청소기]
+  \`\`\`
+- graph TD 또는 graph LR 만 사용. sequenceDiagram, classDiagram 등 다른 종류 금지.
+- 노드 레이블은 한글 OK. 대괄호 안에 한글 텍스트.
 - 마크다운 테이블은 반드시 헤더행 + 구분행(|---|---|) + 데이터행 형식을 지켜라.
 - 모든 본문은 한국어로 작성하라. 기술 용어만 영문 병기 허용.
 
@@ -379,17 +387,10 @@ A1: fitness_score 7이상, A2: mapping 완전성, A3: 반례 3개이상, A4: 세
 	}
 
 	_countAsciiDiagrams(body) {
+		// 신: mermaid 블록 카운트. 구 ASCII 검증과 호환되는 이름 유지.
 		if (!body) return 0;
-		const codeBlocks = body.match(/```[a-zA-Z]*\n[\s\S]*?```/g) || [];
-		let count = 0;
-		for (const cb of codeBlocks) {
-			const inner = cb.replace(/```[a-zA-Z]*\n/, "").replace(/```$/, "");
-			const asciiChars = (inner.match(/[─━│┃┌┐└┘├┤┬┴┼+|\->=<^v↑↓→←]/g) || []).length;
-			const hasBox = /[+\-]{3,}/.test(inner) || /[─━]{3,}/.test(inner);
-			const hasArrow = inner.includes("->") || inner.includes("-->") || inner.includes("→");
-			if (asciiChars >= 8 && (hasBox || hasArrow)) count++;
-		}
-		return count;
+		const mermaidBlocks = body.match(/```mermaid\s*\n[\s\S]*?```/g) || [];
+		return mermaidBlocks.length;
 	}
 
 	async _validateAndRetryWriter(tone) {
@@ -422,20 +423,15 @@ A1: fitness_score 7이상, A2: mapping 완전성, A3: 반례 3개이상, A4: 세
 
 🚨 절대 규칙 (이번엔 반드시 지킬 것):
 1. body는 최소 4000자 이상.
-2. 코드블록(\`\`\` \`\`\`)으로 감싼 ASCII 다이어그램을 정확히 2개 이상 포함.
-   예시:
+2. mermaid 다이어그램을 정확히 2개 이상 포함:
+   \`\`\`mermaid
+   graph TD
+     A[사용자] --> B[처리]
+     B --> C[결과]
    \`\`\`
-   +-------------+      +-------------+
-   |  사용자 입력  | ---> |   처리 단계   |
-   +-------------+      +-------------+
-                              |
-                              v
-                       +-------------+
-                       |   최종 결과   |
-                       +-------------+
-   \`\`\`
-3. 마크다운 테이블 2개 이상.
-4. 톤: ${tone}.`,
+3. graph TD 또는 graph LR 만 사용. 노드 레이블은 한글 OK.
+4. 마크다운 테이블 2개 이상.
+5. 톤: ${tone}.`,
 				[
 					JSON.stringify(this.results.contextPacket),
 					JSON.stringify(this.results.design),
@@ -737,9 +733,13 @@ E1 비유 명확성(30%), E2 기술 깊이(25%), E3 가독성(20%), E4 흡인력
 				return;
 			}
 			try {
-				const htmlContent = BlogAssembler.markdownToHtml(
-					this.results.assembledPublish || this.results.assembledText || "",
-				);
+				let bodyMd = this.results.assembledPublish || this.results.assembledText || "";
+				try {
+					bodyMd = await BlogAssembler.replaceMermaidBlocksWithImages(bodyMd);
+				} catch (e) {
+					console.warn("mermaid 변환 실패, 원본 사용:", e.message);
+				}
+				const htmlContent = BlogAssembler.markdownToHtml(bodyMd);
 				const title = `${this.results.design?.confirmed_analogy || "비유"} — ${this.results.contextPacket?.topic || "기술 블로그"}`;
 				const isDraft = publishMode === "draft";
 

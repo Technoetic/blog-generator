@@ -9,14 +9,22 @@ class AuthManager {
 		const isDraft = publishMode === "draft";
 
 		try {
+			document.getElementById("publishBtn").textContent = "다이어그램 변환 중...";
+
+			let bodyMd = results.assembledPublish ||
+				results.assembledText ||
+				results.assembled ||
+				"";
+			// mermaid 코드블록 → Excalidraw 손그림 PNG → imgur URL
+			try {
+				bodyMd = await BlogAssembler.replaceMermaidBlocksWithImages(bodyMd);
+			} catch (e) {
+				console.warn("mermaid 변환 전체 실패, 원본 사용:", e.message);
+			}
+
 			document.getElementById("publishBtn").textContent = "발행 중...";
 
-			const htmlContent = BlogAssembler.markdownToHtml(
-				results.assembledPublish ||
-					results.assembledText ||
-					results.assembled ||
-					"",
-			);
+			const htmlContent = BlogAssembler.markdownToHtml(bodyMd);
 			const title = `${results.design?.confirmed_analogy || "비유"} — ${results.contextPacket?.topic || "기술 블로그"}`;
 
 			const res = await fetch("/api/blogger/post", {

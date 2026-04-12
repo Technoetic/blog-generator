@@ -1,5 +1,120 @@
 // BlogAssembler.js — 마크다운 → HTML 변환, 블로그 조립
 class BlogAssembler {
+	// Excalidraw 라이브러리 캐시 (한 번만 로드)
+	static _excalidrawLibs = null;
+
+	static async _loadExcalidrawLibs() {
+		if (BlogAssembler._excalidrawLibs) return BlogAssembler._excalidrawLibs;
+		const sources = [
+			"https://esm.sh",
+			"https://esm.sh/v135",
+		];
+		let lastErr = null;
+		for (const base of sources) {
+			try {
+				const mte = await import(/* @vite-ignore */ `${base}/@excalidraw/mermaid-to-excalidraw@1.1.2`);
+				const ex = await import(/* @vite-ignore */ `${base}/@excalidraw/excalidraw@0.17.6`);
+				const api = ex.default || ex;
+				if (typeof api.exportToCanvas !== "function") throw new Error("exportToCanvas 없음");
+				BlogAssembler._excalidrawLibs = { mte, api };
+				console.log(`Excalidraw libs loaded from ${base}`);
+				return BlogAssembler._excalidrawLibs;
+			} catch (e) {
+				lastErr = e;
+				console.warn(`${base} 실패: ${e.message}`);
+			}
+		}
+		throw lastErr || new Error("Excalidraw libs 로드 실패");
+	}
+
+	// mermaid 코드 → PNG dataURL (Canvas 경로)
+	static async mermaidToPngDataUrl(mermaidCode, scale = 2) {
+		const { mte, api } = await BlogAssembler._loadExcalidrawLibs();
+		const { elements } = await mte.parseMermaidToExcalidraw(mermaidCode);
+		// label을 정식 text element로 확장 (한글 표시 보장)
+		const skeleton = [];
+		for (const el of elements) {
+			if (el.type === "rectangle" || el.type === "ellipse" || el.type === "diamond") {
+				const item = {
+					type: el.type,
+					x: el.x, y: el.y,
+					width: el.width, height: el.height,
+					id: el.id,
+					strokeColor: el.strokeColor,
+					backgroundColor: el.backgroundColor,
+				};
+				if (el.label && el.label.text) {
+					item.label = { text: el.label.text, fontFamily: 1 };
+				}
+				skeleton.push(item);
+			} else if (el.type === "arrow") {
+				const item = {
+					type: "arrow",
+					x: el.x, y: el.y,
+					width: el.width, height: el.height,
+					strokeColor: el.strokeColor,
+				};
+				if (el.startBinding) item.start = { id: el.startBinding.elementId };
+				if (el.endBinding) item.end = { id: el.endBinding.elementId };
+				if (el.points) item.points = el.points;
+				skeleton.push(item);
+			}
+		}
+		const rebuilt = api.convertToExcalidrawElements(skeleton);
+		const canvas = await api.exportToCanvas({
+			elements: rebuilt,
+			appState: { exportBackground: true, viewBackgroundColor: "#ffffff" },
+			files: {},
+			getDimensions: (w, h) => ({ width: w * scale, height: h * scale, scale }),
+		});
+		return canvas.toDataURL("image/png");
+	}
+
+	// 본문 안 ```mermaid 블록을 imgur URL로 변환 후 마크다운 이미지로 치환
+	static async replaceMermaidBlocksWithImages(body) {
+		if (!body) return body;
+		const blocks = [];
+		const re = /```mermaid\s*\n([\s\S]*?)```/g;
+		let m;
+		while ((m = re.exec(body)) !== null) {
+			blocks.push({ full: m[0], code: m[1].trim(), index: m.index });
+		}
+		if (blocks.length === 0) return body;
+		console.log(`mermaid 블록 ${blocks.length}개 변환 시작`);
+
+		const replacements = [];
+		for (const b of blocks) {
+			try {
+				const dataUrl = await BlogAssembler.mermaidToPngDataUrl(b.code, 2);
+				// imgur 업로드
+				let imageUrl = dataUrl; // fallback
+				try {
+					const res = await fetch("/api/imgur-upload", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ image: dataUrl.replace(/^data:image\/\w+;base64,/, "") }),
+					});
+					if (res.ok) {
+						const data = await res.json();
+						if (data.link) imageUrl = data.link;
+					}
+				} catch (e) {
+					console.warn("imgur 업로드 실패, dataURL 사용:", e.message);
+				}
+				replacements.push({ full: b.full, replacement: `![diagram](${imageUrl})` });
+			} catch (e) {
+				console.warn(`mermaid 변환 실패 (블록 #${replacements.length}):`, e.message);
+				// 실패 시 원본 코드블록 유지
+			}
+		}
+
+		let result = body;
+		for (const r of replacements) {
+			result = result.replace(r.full, r.replacement);
+		}
+		return result;
+	}
+
 	static markdownToHtml(md) {
 		marked.setOptions({ breaks: true, gfm: true });
 
@@ -45,7 +160,22 @@ class BlogAssembler {
 		return `<div class="blog-content">${html}</div>`;
 	}
 
-	// structure_mapping → ASCII 박스 다이어그램 마크다운 (결정론적 fallback).
+	// structure_mapping → mermaid 다이어그램 (결정론적 fallback).
+	static buildMermaidDiagram(structureMapping) {
+		if (!structureMapping || structureMapping.length === 0) return "";
+		const lines = ["```mermaid", "graph LR"];
+		const items = structureMapping.slice(0, 5);
+		for (let i = 0; i < items.length; i++) {
+			const m = items[i];
+			const tech = (m.tech || "").replace(/[\[\]]/g, "");
+			const ana = (m.analogy || "").replace(/[\[\]]/g, "");
+			lines.push(`  T${i}[${tech}] --> A${i}[${ana}]`);
+		}
+		lines.push("```");
+		return lines.join("\n");
+	}
+
+	// structure_mapping → ASCII 박스 다이어그램 마크다운 (구 fallback, 호환용).
 	static buildAsciiDiagram(structureMapping) {
 		if (!structureMapping || structureMapping.length === 0) return "";
 		const visualLen = (s) => {
@@ -70,21 +200,14 @@ class BlogAssembler {
 		return "```\n" + lines.join("\n") + "\n```";
 	}
 
-	// 본문에 ASCII 다이어그램이 부족하면 결정론적 fallback 삽입.
+	// 본문에 mermaid 다이어그램이 부족하면 결정론적 fallback 삽입.
 	static ensureAsciiDiagrams(body, contextPacket) {
 		if (!body) return body;
-		const codeBlocks = body.match(/```[a-zA-Z]*\n[\s\S]*?```/g) || [];
-		let asciiCount = 0;
-		for (const cb of codeBlocks) {
-			const inner = cb.replace(/```[a-zA-Z]*\n/, "").replace(/```$/, "");
-			const asciiChars = (inner.match(/[─━│┃┌┐└┘├┤┬┴┼+|\->=<^v↑↓→←]/g) || []).length;
-			const hasBox = /[+\-]{3,}/.test(inner) || /[─━]{3,}/.test(inner);
-			const hasArrow = inner.includes("->") || inner.includes("-->") || inner.includes("→");
-			if (asciiChars >= 8 && (hasBox || hasArrow)) asciiCount++;
-		}
-		if (asciiCount >= 2) return body;
+		const mermaidBlocks = body.match(/```mermaid\s*\n[\s\S]*?```/g) || [];
+		const mermaidCount = mermaidBlocks.length;
+		if (mermaidCount >= 2) return body;
 
-		const need = 2 - asciiCount;
+		const need = 2 - mermaidCount;
 		const mapping = contextPacket?.structure_mapping || [];
 		if (mapping.length === 0) return body;
 
@@ -93,7 +216,7 @@ class BlogAssembler {
 		for (let i = 0; i < need; i++) {
 			const slice = i === 0 ? mapping.slice(0, half) : mapping.slice(half);
 			if (slice.length === 0) continue;
-			fallbackDiagrams.push("\n\n### 한눈에 보는 매핑\n\n" + BlogAssembler.buildAsciiDiagram(slice));
+			fallbackDiagrams.push("\n\n### 한눈에 보는 매핑\n\n" + BlogAssembler.buildMermaidDiagram(slice));
 		}
 
 		// 코드블록 외부의 ## 헤딩만 후보 (코드블록 안 ##은 마크다운 헤딩이 아님)
