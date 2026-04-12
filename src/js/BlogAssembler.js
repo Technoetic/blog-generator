@@ -10,18 +10,26 @@ class BlogAssembler {
 
 		// Blogger는 <style> 태그를 sanitize해서 CSS가 본문 텍스트로 노출됨.
 		// 인라인 style 속성만 통과되므로 marked 출력 후 주요 태그에 직접 주입.
+		// marked는 종종 align 같은 속성을 붙이므로 정규식이 속성 유무 모두 매칭해야 함.
 		let html = marked.parse(processed);
-		html = html
-			.replace(/<h2>/g, '<h2 style="font-size:1.5em;margin:1.5em 0 0.5em;padding-bottom:0.3em;border-bottom:2px solid #667eea;color:#333;">')
-			.replace(/<h3>/g, '<h3 style="font-size:1.2em;margin:1.2em 0 0.4em;color:#555;">')
-			.replace(/<table>/g, '<table style="width:100%;border-collapse:collapse;margin:1em 0;font-size:0.95em;">')
-			.replace(/<th>/g, '<th style="background:#667eea;color:#fff;padding:10px 14px;text-align:left;font-weight:600;border:1px solid #e0e0e0;">')
-			.replace(/<td>/g, '<td style="padding:10px 14px;border:1px solid #e0e0e0;">')
-			.replace(/<pre>/g, '<pre style="background:#1e1e2e;color:#cdd6f4;padding:16px 20px;border-radius:10px;overflow-x:auto;font-size:0.9em;line-height:1.6;margin:1em 0;">')
-			.replace(/<blockquote>/g, '<blockquote style="border-left:4px solid #667eea;background:#f8f9ff;padding:12px 20px;margin:1em 0;border-radius:0 8px 8px 0;color:#444;">')
-			.replace(/<hr>/g, '<hr style="border:none;border-top:1px solid #e0e0e0;margin:2em 0;">')
-			.replace(/<img /g, '<img style="max-width:100%;height:auto;border-radius:12px;margin:1.5em auto;display:block;box-shadow:0 4px 20px rgba(0,0,0,0.15);" ')
-			.replace(/<p>/g, '<p style="line-height:1.8;margin:0.8em 0;">');
+		const inject = (tag, style) => {
+			// <tag> 또는 <tag attr="..."> 둘 다 매칭. 이미 style 있으면 건드리지 않음.
+			const re = new RegExp(`<${tag}(\\s+[^>]*)?>`, "g");
+			html = html.replace(re, (match, attrs) => {
+				if (match.includes("style=")) return match;
+				return `<${tag}${attrs || ""} style="${style}">`;
+			});
+		};
+		inject("h2", "font-size:1.5em;margin:1.5em 0 0.5em;padding-bottom:0.3em;border-bottom:2px solid #667eea;color:#333;");
+		inject("h3", "font-size:1.2em;margin:1.2em 0 0.4em;color:#555;");
+		inject("table", "width:100%;border-collapse:collapse;margin:1em 0;font-size:0.95em;");
+		inject("th", "background:#667eea;color:#fff;padding:10px 14px;text-align:left;font-weight:600;border:1px solid #e0e0e0;");
+		inject("td", "padding:10px 14px;border:1px solid #e0e0e0;");
+		inject("pre", "background:#1e1e2e;color:#cdd6f4;padding:16px 20px;border-radius:10px;overflow-x:auto;font-size:0.9em;line-height:1.6;margin:1em 0;");
+		inject("blockquote", "border-left:4px solid #667eea;background:#f8f9ff;padding:12px 20px;margin:1em 0;border-radius:0 8px 8px 0;color:#444;");
+		inject("hr", "border:none;border-top:1px solid #e0e0e0;margin:2em 0;");
+		inject("img", "max-width:100%;height:auto;border-radius:12px;margin:1.5em auto;display:block;box-shadow:0 4px 20px rgba(0,0,0,0.15);");
+		inject("p", "line-height:1.8;margin:0.8em 0;");
 
 		return `<div class="blog-content">${html}</div>`;
 	}
