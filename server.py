@@ -5,7 +5,7 @@ import urllib.request
 import urllib.parse
 import os
 
-PORT = 9090
+PORT = int(os.environ.get('PORT', 9090))
 os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dist'))
 
 class Handler(SimpleHTTPRequestHandler):
