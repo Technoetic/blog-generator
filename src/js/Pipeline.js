@@ -367,13 +367,60 @@ A1: fitness_score 7이상, A2: mapping 완전성, A3: 반례 3개이상, A4: 세
 		this.results.prompts = imageResult.data;
 		this._track(writerResult.usage);
 		this._track(imageResult.usage);
-		const bodyLen = (this.results.blog.body || "").length;
-		console.log(`Phase 2b 글작성: body=${bodyLen}자, char_count=${this.results.blog.char_count}`);
-		// 안전 검증 — 본문이 비정상적으로 짧으면 1회 재실행
-		if (bodyLen < 2500) {
-			console.warn(`Phase 2b 본문이 너무 짧음 (${bodyLen}자) — 재실행 1회`);
+
+		// 검증 + 재시도 (최대 2회)
+		await this._validateAndRetryWriter(tone);
+	}
+
+	_countAsciiDiagrams(body) {
+		if (!body) return 0;
+		const codeBlocks = body.match(/```[a-zA-Z]*\n[\s\S]*?```/g) || [];
+		let count = 0;
+		for (const cb of codeBlocks) {
+			const inner = cb.replace(/```[a-zA-Z]*\n/, "").replace(/```$/, "");
+			const asciiChars = (inner.match(/[─━│┃┌┐└┘├┤┬┴┼+|\->=<^v↑↓→←]/g) || []).length;
+			const hasBox = /[+\-]{3,}/.test(inner) || /[─━]{3,}/.test(inner);
+			const hasArrow = inner.includes("->") || inner.includes("-->") || inner.includes("→");
+			if (asciiChars >= 8 && (hasBox || hasArrow)) count++;
+		}
+		return count;
+	}
+
+	async _validateAndRetryWriter(tone) {
+		for (let attempt = 0; attempt < 2; attempt++) {
+			const body = this.results.blog.body || "";
+			const bodyLen = body.length;
+			const ascii = this._countAsciiDiagrams(body);
+			console.log(`Phase 2b 검증 (attempt ${attempt}): body=${bodyLen}자, ascii=${ascii}`);
+
+			const tooShort = bodyLen < 2500;
+			const noAscii = ascii < 2;
+			if (!tooShort && !noAscii) return; // 모두 통과
+
+			const reasons = [];
+			if (tooShort) reasons.push(`본문이 너무 짧음(${bodyLen}자, 최소 4000자 필요)`);
+			if (noAscii) reasons.push(`ASCII 다이어그램 부족(${ascii}개, 최소 2개 필요)`);
+			console.warn(`재실행 사유: ${reasons.join(", ")}`);
+
 			const retry = await ApiClient.callAgent(
-				`이전 글이 너무 짧게 끝났습니다. 다시 처음부터 작성하되, 본문(body)이 최소 4000자 이상이 되도록 풍부하게 작성하세요. 톤: ${tone}. ASCII 다이어그램은 코드블록으로, 테이블은 마크다운 형식으로.`,
+				`이전 글이 검증 실패. 사유: ${reasons.join(" / ")}.
+
+🚨 절대 규칙 (이번엔 반드시 지킬 것):
+1. body는 최소 4000자 이상.
+2. 코드블록(\`\`\` \`\`\`)으로 감싼 ASCII 다이어그램을 정확히 2개 이상 포함.
+   예시:
+   \`\`\`
+   +-------------+      +-------------+
+   |  사용자 입력  | ---> |   처리 단계   |
+   +-------------+      +-------------+
+                              |
+                              v
+                       +-------------+
+                       |   최종 결과   |
+                       +-------------+
+   \`\`\`
+3. 마크다운 테이블 2개 이상.
+4. 톤: ${tone}.`,
 				[
 					JSON.stringify(this.results.contextPacket),
 					JSON.stringify(this.results.design),
@@ -392,12 +439,16 @@ A1: fitness_score 7이상, A2: mapping 완전성, A3: 반례 3개이상, A4: 세
 					},
 				},
 			);
-			const bl2 = (retry.data.body || "").length;
-			console.log(`재시도 결과: body=${bl2}`);
-			if (bl2 > bodyLen) {
+			this._track(retry.usage);
+			const newBody = retry.data.body || "";
+			const newAscii = this._countAsciiDiagrams(newBody);
+			console.log(`재시도 결과: body=${newBody.length}자, ascii=${newAscii}`);
+			// 재시도 결과가 더 좋으면 채택
+			const oldScore = bodyLen + ascii * 1000;
+			const newScore = newBody.length + newAscii * 1000;
+			if (newScore > oldScore) {
 				this.results.blog = retry.data;
 			}
-			this._track(retry.usage);
 		}
 	}
 
