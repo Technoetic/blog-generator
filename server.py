@@ -44,6 +44,46 @@ def _refresh_access_token():
     return _token_cache['access_token']
 
 
+def _extract_canonical_name(query, results):
+    """검색 결과 빈도 기반으로 정식 영문 명칭 추출.
+
+    - 사용자 입력에 이미 영문이 충분히(3자+) 있으면 None 반환 (사용자 입력 우선)
+    - 모든 title+snippet에서 [A-Z][a-zA-Z0-9]+ 패턴 추출
+    - 흔한 일반 단어 stopword 제거
+    - 빈도 카운트 → 3회 이상 등장한 최빈값 채택
+    - 못 찾으면 None
+    """
+    has_english_in_query = bool(re.search(r'[A-Za-z]{3,}', query))
+    if has_english_in_query:
+        return None
+
+    text = ' '.join(f"{r.get('title','')} {r.get('snippet','')}" for r in results)
+    candidates = re.findall(r'\b[A-Z][a-zA-Z0-9]{2,30}\b', text)
+
+    stopwords = {
+        'The', 'And', 'For', 'With', 'From', 'This', 'That', 'What', 'How',
+        'Why', 'When', 'Where', 'Wikipedia', 'GitHub', 'YouTube', 'Google',
+        'Naver', 'Blog', 'Personal', 'AI', 'API', 'URL', 'HTTP', 'HTTPS',
+        'JSON', 'HTML', 'CSS', 'JS', 'SDK', 'CLI', 'PDF', 'IDE', 'IT',
+        'CPU', 'GPU', 'RAM', 'OS', 'PC', 'PR', 'PM', 'KO', 'EN', 'KR',
+        'New', 'Old', 'Best', 'Top', 'All', 'Now', 'Use', 'Get', 'Set',
+        'Open', 'Close', 'Start', 'End', 'Run', 'Install', 'Setup', 'Guide',
+        'Update', 'Version', 'Beta', 'Alpha', 'Pro', 'Plus', 'Free', 'Paid',
+    }
+    counts = {}
+    for c in candidates:
+        if c in stopwords:
+            continue
+        counts[c] = counts.get(c, 0) + 1
+
+    if not counts:
+        return None
+    best = max(counts.items(), key=lambda kv: kv[1])
+    if best[1] < 3:
+        return None
+    return best[0]
+
+
 def _json_response(handler, status, payload):
     body = json.dumps(payload).encode()
     handler.send_response(status)
@@ -110,7 +150,12 @@ class Handler(SimpleHTTPRequestHandler):
                 title_clean = re.sub(r'<[^>]+>', '', t).strip()
                 snippet_clean = re.sub(r'<[^>]+>', '', snippets[i]).strip() if i < len(snippets) else ''
                 results.append({'title': title_clean, 'snippet': snippet_clean})
-            _json_response(self, 200, {'query': query, 'results': results})
+            canonical = _extract_canonical_name(query, results)
+            _json_response(self, 200, {
+                'query': query,
+                'results': results,
+                'canonical_name': canonical,
+            })
         except Exception as e:
             _json_response(self, 500, {'error': str(e)})
 

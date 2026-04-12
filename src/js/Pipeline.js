@@ -59,6 +59,7 @@ class Pipeline {
 		const result = await PipelineUI.timed("phase1", async () => {
 			let researchContext = "";
 			let webResults = null;
+			let canonicalName = null;
 			// 1단계: 실제 웹 검색 (DuckDuckGo via /api/search)
 			try {
 				const searchRes = await fetch("/api/search", {
@@ -69,7 +70,12 @@ class Pipeline {
 				if (searchRes.ok) {
 					const data = await searchRes.json();
 					webResults = data.results || [];
-					console.log(`웹 검색: ${webResults.length}건`);
+					canonicalName = data.canonical_name || null;
+					console.log(`웹 검색: ${webResults.length}건, canonical=${canonicalName}`);
+					if (canonicalName) {
+						// 사용자 입력 topic을 검색 결과 기반 정식 명칭으로 강제 교체
+						topic = `${canonicalName} (사용자 입력: ${topic})`;
+					}
 				}
 			} catch (e) {
 				console.warn("웹 검색 실패:", e.message);
