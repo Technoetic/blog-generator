@@ -85,8 +85,15 @@ class BlogAssembler {
 			fallbackDiagrams.push("\n\n### 한눈에 보는 매핑\n\n" + BlogAssembler.buildAsciiDiagram(slice));
 		}
 
-		// 본문 끝에서 마지막 ## 헤딩 직전에 삽입
-		const headings = [...body.matchAll(/^##\s/gm)];
+		// 코드블록 외부의 ## 헤딩만 후보 (코드블록 안 ##은 마크다운 헤딩이 아님)
+		const codeRanges = [];
+		const codeRegex = /```[a-zA-Z]*\n[\s\S]*?```/g;
+		let cm;
+		while ((cm = codeRegex.exec(body)) !== null) {
+			codeRanges.push([cm.index, cm.index + cm[0].length]);
+		}
+		const inCode = (idx) => codeRanges.some(([s, e]) => idx >= s && idx < e);
+		const headings = [...body.matchAll(/^##\s/gm)].filter((m) => !inCode(m.index));
 		if (headings.length >= 2) {
 			const insertPos = headings[headings.length - 1].index;
 			return body.slice(0, insertPos) + fallbackDiagrams.join("\n") + "\n\n" + body.slice(insertPos);
