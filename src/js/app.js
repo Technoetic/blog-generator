@@ -2,10 +2,6 @@
 const pipeline = new Pipeline();
 
 function startPipeline() {
-	if (!AuthManager.accessPassword) {
-		AuthManager.promptUnlock();
-		return;
-	}
 	pipeline.run();
 }
 function showTab(name) {
