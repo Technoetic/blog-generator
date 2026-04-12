@@ -34,6 +34,47 @@ class BlogAssembler {
 		return `<div class="blog-content">${html}</div>`;
 	}
 
+	// 본문을 글자 수 중간점에서 가장 가까운 ## 또는 ### 헤딩으로 분할.
+	// front_half/back_half 둘 다 비어있지 않도록 보장.
+	static splitBody(body) {
+		if (!body) return { front: "", back: "" };
+		const lines = body.split("\n");
+		// 헤딩 위치 수집
+		const headingLines = [];
+		for (let i = 0; i < lines.length; i++) {
+			if (/^##\s/.test(lines[i]) || /^###\s/.test(lines[i])) {
+				headingLines.push(i);
+			}
+		}
+		if (headingLines.length === 0) {
+			// 헤딩 없음 → 줄 중간에서 분할
+			const mid = Math.floor(lines.length / 2);
+			return {
+				front: lines.slice(0, mid).join("\n"),
+				back: lines.slice(mid).join("\n"),
+			};
+		}
+		// 글자 수 중간점 계산
+		const midChar = body.length / 2;
+		let bestLine = headingLines[0];
+		let bestDiff = Infinity;
+		let charCount = 0;
+		for (let i = 0; i < lines.length; i++) {
+			if (headingLines.includes(i) && i > 0) {
+				const diff = Math.abs(charCount - midChar);
+				if (diff < bestDiff) {
+					bestDiff = diff;
+					bestLine = i;
+				}
+			}
+			charCount += lines[i].length + 1;
+		}
+		return {
+			front: lines.slice(0, bestLine).join("\n"),
+			back: lines.slice(bestLine).join("\n"),
+		};
+	}
+
 	static assemble(blog, prompts, images, imageUrls) {
 		const introImg = images?.intro;
 		const middleImg = images?.middle;
@@ -41,6 +82,17 @@ class BlogAssembler {
 		const introUrl = imageUrls?.intro;
 		const middleUrl = imageUrls?.middle;
 		const outroUrl = imageUrls?.outro;
+
+		// 신: blog.body 단일 필드. 구: front_half/back_half (호환).
+		let front, back;
+		if (blog.body) {
+			const split = BlogAssembler.splitBody(blog.body);
+			front = split.front;
+			back = split.back;
+		} else {
+			front = blog.front_half || "";
+			back = blog.back_half || "";
+		}
 
 		// 미리보기용: base64
 		const introBlock = introImg
@@ -52,7 +104,7 @@ class BlogAssembler {
 		const outroBlock = outroImg
 			? `![아웃트로](${outroImg})`
 			: `> 🖼️ ${prompts.outro_prompt}`;
-		const assembled = `${introBlock}\n\n${blog.front_half}\n\n${middleBlock}\n\n${blog.back_half}\n\n${outroBlock}`;
+		const assembled = `${introBlock}\n\n${front}\n\n${middleBlock}\n\n${back}\n\n${outroBlock}`;
 
 		// Blogger 발행용: Imgur URL
 		const introPub = introUrl
@@ -64,10 +116,10 @@ class BlogAssembler {
 		const outroPub = outroUrl
 			? `![아웃트로](${outroUrl})`
 			: `> 🖼️ ${prompts.outro_prompt}`;
-		const assembledPublish = `${introPub}\n\n${blog.front_half}\n\n${middlePub}\n\n${blog.back_half}\n\n${outroPub}`;
+		const assembledPublish = `${introPub}\n\n${front}\n\n${middlePub}\n\n${back}\n\n${outroPub}`;
 
 		// 평가용: 텍스트만
-		const assembledText = `> 🖼️ ${prompts.intro_prompt}\n\n${blog.front_half}\n\n> 🖼️ ${prompts.middle_prompt}\n\n${blog.back_half}\n\n> 🖼️ ${prompts.outro_prompt}`;
+		const assembledText = `> 🖼️ ${prompts.intro_prompt}\n\n${front}\n\n> 🖼️ ${prompts.middle_prompt}\n\n${back}\n\n> 🖼️ ${prompts.outro_prompt}`;
 
 		return { assembled, assembledPublish, assembledText };
 	}
