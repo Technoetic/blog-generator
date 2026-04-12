@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>비유 블로그 생성기</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" integrity="sha384-948ahk4ZmxYVYOc+rxN1H2gM1EJ2Duhp7uHtZ4WSLkV4Vtx5MUqnV+l7u9B+jFv+" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+  <div class="container">
+    <h1>비유 블로그 생성기</h1>
+    <p class="subtitle">BizRouter + Gemini 2.5 Flash | 6-Agent Pipeline | Blogger 자동 발행</p>
+
+    <!-- 입력 패널 -->
+    <div class="input-panel">
+      <div class="input-row">
+        <div class="flex-1">
+          <label>기술 주제</label>
+          <input type="text" id="topic" placeholder="예: API 게이트웨이, Docker 컨테이너, OAuth2 인증...">
+        </div>
+      </div>
+      <div class="input-row">
+        <div class="flex-auto">
+          <label>톤</label>
+          <select id="tone">
+            <option value="친근">친근 (기본)</option>
+            <option value="전문">전문</option>
+            <option value="유머">유머</option>
+          </select>
+        </div>
+        <div class="flex-auto">
+          <label>이미지 비율</label>
+          <select id="ratio">
+            <option value="16:9">16:9 (기본)</option>
+            <option value="1:1">1:1</option>
+            <option value="4:3">4:3</option>
+            <option value="9:16">9:16</option>
+          </select>
+        </div>
+        <div class="flex-auto">
+          <label>발행 방식</label>
+          <select id="publish">
+            <option value="public">즉시 공개</option>
+            <option value="draft">초안 저장</option>
+            <option value="local">로컬만 저장</option>
+          </select>
+        </div>
+      </div>
+      <div class="input-row">
+        <div class="flex-1">
+          <button type="button" class="btn btn-secondary" id="loginBtn" onclick="doGoogleLogin()">Google 로그인</button>
+        </div>
+        <div class="flex-1">
+          <button type="button" class="btn btn-primary" id="generateBtn" onclick="startPipeline()">블로그 생성하기</button>
+        </div>
+      </div>
+      <div id="loginStatus" style="font-size:12px; color:rgba(255,255,255,0.4); margin-top:8px; display:none;"></div>
+    </div>
+
+    <!-- 파이프라인 상태 -->
+    <div class="pipeline" id="pipeline">
+      <h2>파이프라인 진행 상황</h2>
+      <div class="phase waiting" id="phase1">
+        <div class="phase-icon">1</div>
+        <div class="phase-label">Phase 1 — 주제 분석 & 비유 후보 선정</div>
+        <div class="phase-time" id="phase1-time"></div>
+      </div>
+      <div class="phase waiting" id="phase2a">
+        <div class="phase-icon">2a</div>
+        <div class="phase-label">Phase 2a — Agent ① 비유설계 → Agent ④ 검증</div>
+        <div class="phase-time" id="phase2a-time"></div>
+      </div>
+      <div class="phase waiting" id="phase2b">
+        <div class="phase-icon">2b</div>
+        <div class="phase-label">Phase 2b — Agent ②③ 글작성 + 이미지프롬프트 (병렬)</div>
+        <div class="phase-time" id="phase2b-time"></div>
+      </div>
+      <div class="phase waiting" id="phase3a">
+        <div class="phase-icon">3a</div>
+        <div class="phase-label">Phase 3a — Agent ④ 검증 (②③ 출력)</div>
+        <div class="phase-time" id="phase3a-time"></div>
+      </div>
+      <div class="phase waiting" id="phase3b">
+        <div class="phase-icon">3b</div>
+        <div class="phase-label">Phase 3b — Agent ⑥ 팩트체크</div>
+        <div class="phase-time" id="phase3b-time"></div>
+      </div>
+      <div class="phase waiting" id="phase3c">
+        <div class="phase-icon">3c</div>
+        <div class="phase-label">Phase 3c — 블로그 조립</div>
+        <div class="phase-time" id="phase3c-time"></div>
+      </div>
+      <div class="phase waiting" id="phase4">
+        <div class="phase-icon">4</div>
+        <div class="phase-label">Phase 4 — Agent ⑤ 품질 평가</div>
+        <div class="phase-time" id="phase4-time"></div>
+      </div>
+      <div class="phase waiting" id="phase5">
+        <div class="phase-icon">5</div>
+        <div class="phase-label">Phase 5 — Blogger 발행</div>
+        <div class="phase-time" id="phase5-time"></div>
+      </div>
+
+      <div class="cost-bar" id="costBar" style="display:none;">
+        총 토큰: <span id="totalTokens">0</span> &nbsp;|&nbsp;
+        예상 비용: <span id="totalCost">₩0</span> &nbsp;|&nbsp;
+        총 소요: <span id="totalTime">0초</span>
+      </div>
+    </div>
+
+    <!-- 에러 메시지 -->
+    <div class="error-msg" id="errorMsg"></div>
+
+    <!-- 결과 패널 -->
+    <div class="result-panel" id="resultPanel">
+      <div class="result-tabs">
+        <div class="result-tab active" onclick="showTab('preview')">블로그 미리보기</div>
+        <div class="result-tab" onclick="showTab('design')">비유설계서</div>
+        <div class="result-tab" onclick="showTab('verify')">검증 리포트</div>
+        <div class="result-tab" onclick="showTab('factcheck')">팩트체크</div>
+        <div class="result-tab" onclick="showTab('eval')">평가 리포트</div>
+        <div class="result-tab" onclick="showTab('prompts')">이미지 프롬프트</div>
+      </div>
+      <div class="result-content">
+        <div class="result-pane active" id="pane-preview">
+          <div class="blog-preview" id="blogPreview"></div>
+        </div>
+        <div class="result-pane" id="pane-design">
+          <pre class="report-json" id="designReport"></pre>
+        </div>
+        <div class="result-pane" id="pane-verify">
+          <pre class="report-json" id="verifyReport"></pre>
+        </div>
+        <div class="result-pane" id="pane-factcheck">
+          <pre class="report-json" id="factcheckReport"></pre>
+        </div>
+        <div class="result-pane" id="pane-eval">
+          <pre class="report-json" id="evalReport"></pre>
+        </div>
+        <div class="result-pane" id="pane-prompts">
+          <pre class="report-json" id="promptsReport"></pre>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="copyBlog()">블로그 복사</button>
+        <button type="button" class="btn btn-secondary" onclick="downloadAll()">전체 다운로드</button>
+        <button type="button" class="btn btn-primary" id="publishBtn" onclick="publishToBlogger()" style="display:none;">Blogger 발행</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/ApiClient.js"></script>
+  <script src="js/BlogAssembler.js"></script>
+  <script src="js/PipelineUI.js"></script>
+  <script src="js/AuthManager.js"></script>
+  <script src="js/Pipeline.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
