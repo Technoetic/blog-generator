@@ -1,6 +1,7 @@
-"""로컬 서버 — 정적 파일 + Imgur/BizRouter/Blogger 프록시 + 데모 패스워드 게이트"""
+"""로컬 서버 — 정적 파일 + Imgur/BizRouter/Blogger 프록시 + 웹 검색"""
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import json
+import re
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -78,9 +79,40 @@ class Handler(SimpleHTTPRequestHandler):
                 _json_response(self, 401, {'error': 'unauthorized'})
                 return
             self._handle_blogger_post()
+        elif self.path == '/api/search':
+            if not self._check_password():
+                _json_response(self, 401, {'error': 'unauthorized'})
+                return
+            self._handle_search()
         else:
             self.send_response(404)
             self.end_headers()
+
+    def _handle_search(self):
+        try:
+            n = int(self.headers.get('Content-Length', 0))
+            body_in = json.loads(self.rfile.read(n) or b'{}')
+            query = body_in.get('query', '').strip()
+            if not query:
+                _json_response(self, 400, {'error': 'query 없음'})
+                return
+            q = urllib.parse.quote(query)
+            req = urllib.request.Request(
+                f'https://html.duckduckgo.com/html/?q={q}',
+                headers={'User-Agent': 'Mozilla/5.0 (compatible; BlogGenerator/1.0)'}
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                html = resp.read().decode('utf-8', errors='replace')
+            titles = re.findall(r'<a[^>]*class="result__a"[^>]*>(.*?)</a>', html, re.DOTALL)
+            snippets = re.findall(r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>', html, re.DOTALL)
+            results = []
+            for i, t in enumerate(titles[:8]):
+                title_clean = re.sub(r'<[^>]+>', '', t).strip()
+                snippet_clean = re.sub(r'<[^>]+>', '', snippets[i]).strip() if i < len(snippets) else ''
+                results.append({'title': title_clean, 'snippet': snippet_clean})
+            _json_response(self, 200, {'query': query, 'results': results})
+        except Exception as e:
+            _json_response(self, 500, {'error': str(e)})
 
     def _handle_unlock(self):
         try:

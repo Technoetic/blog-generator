@@ -58,24 +58,40 @@ class Pipeline {
 	async _phase1(topic, tone, ratio) {
 		const result = await PipelineUI.timed("phase1", async () => {
 			let researchContext = "";
+			let webResults = null;
+			// 1단계: 실제 웹 검색 (DuckDuckGo via /api/search)
 			try {
+				const searchRes = await fetch("/api/search", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ query: topic }),
+				});
+				if (searchRes.ok) {
+					const data = await searchRes.json();
+					webResults = data.results || [];
+					console.log(`웹 검색: ${webResults.length}건`);
+				}
+			} catch (e) {
+				console.warn("웹 검색 실패:", e.message);
+			}
+
+			// 2단계: 검색 결과를 LLM에 전달해서 구조화된 조사 리포트 생성
+			try {
+				const webContext = webResults && webResults.length > 0
+					? webResults.map((r, i) => `[${i + 1}] ${r.title}\n${r.snippet}`).join("\n\n")
+					: "검색 결과 없음";
 				const searchResult = await ApiClient.callAgent(
-					`당신은 기술 리서처입니다. 주어진 기술 주제에 대해 웹 검색을 수행하고, 블로그 작성에 필요한 핵심 정보를 정리하세요.
-정리할 내용: 정의, 핵심 개념 3~5가지, 작동 원리, 주요 사용 사례, 장단점.
-검색 결과를 바탕으로 사실에 기반한 정보만 정리하세요.`,
+					`당신은 기술 리서처입니다. 주어진 웹 검색 결과를 바탕으로 주제에 대한 정확한 정보를 정리하세요.
+검색 결과에 기반한 사실만 사용하고, 모르는 내용은 추측하지 마세요.
+
+## 웹 검색 결과
+${webContext}
+
+정리할 내용: 정의, 핵심 개념 3~5가지, 작동 원리, 주요 사용 사례, 장단점.`,
 					[`기술 주제: ${topic}`],
 					{
 						thinking_budget: 1024,
 						temperature: 0.0,
-						tools: [
-							{
-								type: "function",
-								function: {
-									name: "google_search",
-									description: "기술 주제에 대한 정보를 검색합니다",
-								},
-							},
-						],
 						schema_name: "research",
 						response_schema: {
 							type: "object",
