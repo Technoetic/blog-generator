@@ -19,13 +19,6 @@ function downloadAll() {
 function publishToBlogger() {
 	AuthManager.publishToBlogger(pipeline.results);
 }
-function doGoogleLogin() {
-	AuthManager.promptUnlock();
-}
-
-(function init() {
-	if (AuthManager.accessPassword) AuthManager.updateLoginUI();
-})();
 
 document.getElementById("topic").addEventListener("keydown", (e) => {
 	if (e.key === "Enter") startPipeline();
