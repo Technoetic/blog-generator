@@ -36,7 +36,10 @@ class ApiClient {
 
 		const res = await fetch(Config.BIZROUTER_URL, {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: {
+				"Content-Type": "application/json",
+				...AuthManager.getAuthHeaders(),
+			},
 			body: JSON.stringify(body),
 		});
 
@@ -74,7 +77,10 @@ class ApiClient {
 		try {
 			const res = await fetch(Config.BIZROUTER_URL, {
 				method: "POST",
-				headers: { "Content-Type": "application/json" },
+				headers: {
+					"Content-Type": "application/json",
+					...AuthManager.getAuthHeaders(),
+				},
 				body: JSON.stringify({
 					model: Config.IMAGE_MODEL,
 					messages: [
@@ -114,7 +120,10 @@ class ApiClient {
 			const base64 = base64DataUrl.replace(/^data:image\/\w+;base64,/, "");
 			const res = await fetch(Config.IMGUR_PROXY_URL, {
 				method: "POST",
-				headers: { "Content-Type": "application/json" },
+				headers: {
+					"Content-Type": "application/json",
+					...AuthManager.getAuthHeaders(),
+				},
 				body: JSON.stringify({ image: base64 }),
 			});
 			if (!res.ok) return null;

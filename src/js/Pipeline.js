@@ -599,7 +599,7 @@ E1 비유 명확성(30%), E2 기술 깊이(25%), E3 가독성(20%), E4 흡인력
 		this._track(result.usage);
 	}
 
-	// Phase 5: 발행
+	// Phase 5: 발행 (서버 프록시 경유)
 	async _phase5(publishMode) {
 		await PipelineUI.timed("phase5", async () => {
 			if (publishMode === "local") {
@@ -607,61 +607,43 @@ E1 비유 명확성(30%), E2 기술 깊이(25%), E3 가독성(20%), E4 흡인력
 				return;
 			}
 			try {
-				if (!AuthManager.googleAccessToken)
-					await AuthManager.googleLogin(this.results);
-				if (!AuthManager.bloggerBlogId) {
-					const blogs = await AuthManager.getBloggerBlogs();
-					if (blogs.length > 0) {
-						AuthManager.bloggerBlogId = blogs[0].id;
-						sessionStorage.setItem(
-							"blogger_blog_id",
-							AuthManager.bloggerBlogId,
-						);
-					}
-				}
-				if (AuthManager.bloggerBlogId) {
-					const htmlContent = BlogAssembler.markdownToHtml(
-						this.results.assembledPublish || this.results.assembledText || "",
-					);
-					const title = `${this.results.design?.confirmed_analogy || "비유"} — ${this.results.contextPacket?.topic || "기술 블로그"}`;
-					const isDraft = publishMode === "draft";
-					const postUrl = `https://www.googleapis.com/blogger/v3/blogs/${AuthManager.bloggerBlogId}/posts${isDraft ? "?isDraft=true" : ""}`;
+				const htmlContent = BlogAssembler.markdownToHtml(
+					this.results.assembledPublish || this.results.assembledText || "",
+				);
+				const title = `${this.results.design?.confirmed_analogy || "비유"} — ${this.results.contextPacket?.topic || "기술 블로그"}`;
+				const isDraft = publishMode === "draft";
 
-					const res = await fetch(postUrl, {
-						method: "POST",
-						headers: {
-							Authorization: `Bearer ${AuthManager.googleAccessToken}`,
-							"Content-Type": "application/json",
-						},
-						body: JSON.stringify({
-							kind: "blogger#post",
-							title,
-							content: htmlContent,
-							labels: [
-								"기술블로그",
-								"비유",
-								this.results.contextPacket?.topic || "",
-							],
-						}),
-					});
+				const res = await fetch("/api/blogger/post", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						...AuthManager.getAuthHeaders(),
+					},
+					body: JSON.stringify({
+						title,
+						content: htmlContent,
+						labels: [
+							"기술블로그",
+							"비유",
+							this.results.contextPacket?.topic || "",
+						],
+						isDraft,
+					}),
+				});
 
-					if (res.ok) {
-						const post = await res.json();
-						this.results.published = {
-							status: "published",
-							url: post.url,
-							postId: post.id,
-						};
-					} else if (res.status === 401) {
-						AuthManager.googleAccessToken = null;
-						sessionStorage.removeItem("google_token");
-						this.results.published = { status: "ready", message: "토큰 만료" };
-					} else {
-						this.results.published = {
-							status: "ready",
-							message: `발행 실패 (${res.status})`,
-						};
-					}
+				if (res.ok) {
+					const post = await res.json();
+					this.results.published = {
+						status: "published",
+						url: post.url,
+						postId: post.id,
+					};
+				} else {
+					const err = await res.text();
+					this.results.published = {
+						status: "ready",
+						message: `발행 실패 (${res.status}): ${err.substring(0, 100)}`,
+					};
 				}
 			} catch (e) {
 				this.results.published = { status: "ready", message: e.message };
