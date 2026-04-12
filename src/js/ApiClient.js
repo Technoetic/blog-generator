@@ -10,7 +10,7 @@ class ApiClient {
 		];
 
 		const body = {
-			model: Config.MODEL,
+			model: options.model || Config.MODEL,
 			messages,
 			temperature: options.temperature ?? 0.7,
 			thinking_budget: options.thinking_budget ?? 0,

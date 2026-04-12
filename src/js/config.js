@@ -2,6 +2,7 @@
 class Config {
 	static BIZROUTER_URL = "/api/bizrouter";
 	static MODEL = "google/gemini-2.5-flash-lite";
+	static WRITER_MODEL = "google/gemini-2.5-flash";
 	static IMAGE_MODEL = "google/gemini-2.5-flash-image";
 	static IMGUR_PROXY_URL = "/api/imgur-upload";
 	static GOOGLE_CLIENT_ID =
