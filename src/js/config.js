@@ -1,8 +1,6 @@
 // config.js — API 키, 모델 설정, OAuth 설정
 class Config {
-	static BIZROUTER_URL = "https://api.bizrouter.ai/v1/chat/completions";
-	static BIZROUTER_KEY =
-		"REDACTED_BIZROUTER_KEY";
+	static BIZROUTER_URL = "/api/bizrouter";
 	static MODEL = "google/gemini-2.5-flash-lite";
 	static IMAGE_MODEL = "google/gemini-2.5-flash-image";
 	static IMGUR_PROXY_URL = "/api/imgur-upload";

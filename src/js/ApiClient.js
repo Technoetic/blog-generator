@@ -36,10 +36,7 @@ class ApiClient {
 
 		const res = await fetch(Config.BIZROUTER_URL, {
 			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				Authorization: `Bearer ${Config.BIZROUTER_KEY}`,
-			},
+			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(body),
 		});
 
@@ -77,10 +74,7 @@ class ApiClient {
 		try {
 			const res = await fetch(Config.BIZROUTER_URL, {
 				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					Authorization: `Bearer ${Config.BIZROUTER_KEY}`,
-				},
+				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					model: Config.IMAGE_MODEL,
 					messages: [
