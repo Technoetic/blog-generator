@@ -654,6 +654,14 @@ E1 비유 명확성(30%), E2 기술 깊이(25%), E3 가독성(20%), E4 흡인력
 						url: post.url,
 						postId: post.id,
 					};
+					if (post.url) {
+						window.open(post.url, "_blank");
+						const btn = document.getElementById("publishBtn");
+						if (btn) {
+							btn.textContent = "발행 완료 — 새 탭으로 보기";
+							btn.onclick = () => window.open(post.url, "_blank");
+						}
+					}
 				} else {
 					const err = await res.text();
 					this.results.published = {

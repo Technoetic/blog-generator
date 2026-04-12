@@ -42,11 +42,11 @@ class AuthManager {
 				postId: post.id,
 			};
 
-			alert(
-				`발행 완료!\n\n${isDraft ? "초안" : "공개"}으로 저장되었습니다.\nURL: ${post.url}`,
-			);
-			document.getElementById("publishBtn").textContent = "발행 완료";
-			document.getElementById("publishBtn").disabled = true;
+			document.getElementById("publishBtn").textContent = "발행 완료 — 새 탭으로 보기";
+			document.getElementById("publishBtn").disabled = false;
+			document.getElementById("publishBtn").onclick = () =>
+				window.open(post.url, "_blank");
+			window.open(post.url, "_blank");
 		} catch (e) {
 			alert(`발행 오류: ${e.message}`);
 			document.getElementById("publishBtn").textContent = "Blogger 발행";
