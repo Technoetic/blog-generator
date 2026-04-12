@@ -14,6 +14,7 @@ class ApiClient {
 			messages,
 			temperature: options.temperature ?? 0.7,
 			thinking_budget: options.thinking_budget ?? 0,
+			max_tokens: options.max_tokens ?? 16384,
 			stream: false,
 		};
 
@@ -50,6 +51,7 @@ class ApiClient {
 
 		const data = await res.json();
 		const content = data.choices[0].message.content;
+		const finishReason = data.choices[0].finish_reason;
 		const usage = data.usage || {};
 
 		let parsed;
@@ -61,9 +63,17 @@ class ApiClient {
 					content.match(/```json\s*([\s\S]*?)```/) ||
 					content.match(/(\{[\s\S]*\})/);
 				if (jsonMatch) {
-					parsed = JSON.parse(jsonMatch[1].trim());
+					try {
+						parsed = JSON.parse(jsonMatch[1].trim());
+					} catch (e2) {
+						throw new Error(
+							`JSON 파싱 실패 (finish=${finishReason}, len=${content.length}): ${content.substring(content.length - 200)}`,
+						);
+					}
 				} else {
-					throw new Error(`JSON 파싱 실패: ${content.substring(0, 200)}`);
+					throw new Error(
+						`JSON 파싱 실패 (finish=${finishReason}, len=${content.length}): ${content.substring(0, 200)}`,
+					);
 				}
 			}
 		} else {
