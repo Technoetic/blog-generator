@@ -14,7 +14,7 @@ class ApiClient {
 			messages,
 			temperature: options.temperature ?? 0.7,
 			thinking_budget: options.thinking_budget ?? 0,
-			max_tokens: options.max_tokens ?? 16384,
+			max_tokens: options.max_tokens ?? 32768,
 			stream: false,
 		};
 
