@@ -22,7 +22,7 @@
 
 <br/>
 
-<img src="assets/intro.gif" width="280" alt="주제 입력 타이핑"> &nbsp; <img src="assets/pipeline.gif" width="280" alt="6 에이전트 Phase 진행"> &nbsp; <img src="assets/result.gif" width="280" alt="블로그 발행 완료 모달">
+<img src="assets/intro.gif" width="280" alt="주제 입력 타이핑">
 
 </div>
 
