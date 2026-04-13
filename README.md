@@ -22,7 +22,7 @@
 
 <br/>
 
-<img src="assets/intro.png" width="280" alt="주제 입력 화면"> &nbsp; <img src="assets/pipeline.png" width="280" alt="6 에이전트 파이프라인 진행"> &nbsp; <img src="assets/result.png" width="280" alt="Excalidraw 손그림 + Blogger 발행">
+<img src="assets/intro.gif" width="280" alt="주제 입력 타이핑"> &nbsp; <img src="assets/pipeline.gif" width="280" alt="6 에이전트 Phase 진행"> &nbsp; <img src="assets/result.gif" width="280" alt="블로그 발행 완료 모달">
 
 </div>
 
@@ -105,7 +105,7 @@ graph LR
 ## 핵심 기능
 
 <div align="center">
-<img src="assets/mid.png" width="90%" alt="6 에이전트 순차 실행 + Excalidraw 변환">
+<img src="assets/mid.gif" width="90%" alt="6 에이전트 순차 실행 + Excalidraw 변환">
 </div>
 
 <br/>
@@ -629,7 +629,7 @@ graph LR
 
 <div align="center">
 
-<img src="assets/result.png" width="90%" alt="최종 생성 결과"/>
+<img src="assets/result.gif" width="90%" alt="최종 생성 결과"/>
 
 <br/>
 
