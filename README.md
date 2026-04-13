@@ -16,7 +16,7 @@
 **기술 주제 한 줄**을 입력하면 **6개 AI 에이전트**가 비유 설계 → 글쓰기 → 팩트체크 → 평가까지 자동으로 수행하고,<br/>
 손그림 다이어그램과 AI 생성 이미지가 포함된 완성된 블로그 포스트를 **Blogger에 즉시 발행**합니다.
 
-[![Play Now](https://img.shields.io/badge/Play_Now-FF6B6B?style=for-the-badge&logo=googlechrome&logoColor=white)](https://blog-generator-production-5f73.up.railway.app/index.html)
+[<img src="assets/playnow.gif" width="440" alt="지금 생성하기">](https://blog-generator-production-5f73.up.railway.app/index.html)
 
 [핵심 기능](#-핵심-기능) | [에이전트 아키텍처](#-에이전트-아키텍처) | [파이프라인 흐름](#-파이프라인-흐름) | [실행 방법](#-실행-방법)
 
