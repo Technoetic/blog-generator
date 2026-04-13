@@ -615,7 +615,7 @@ graph LR
 
 <div align="center">
 
-<img src="assets/result.gif" width="90%" alt="최종 생성 결과"/>
+<img src="assets/footer.gif" width="90%" alt="6 Agent 셀러브레이션 — Blog Published!"/>
 
 <br/>
 
