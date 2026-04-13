@@ -22,7 +22,7 @@
 
 <br/>
 
-<img src="assets/intro.gif" width="280" alt="주제 입력 타이핑">
+<img src="assets/intro.gif" width="90%" alt="6-Agent 파이프라인 카드 애니메이션">
 
 </div>
 
