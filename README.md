@@ -22,7 +22,7 @@
 
 <br/>
 
-<img src="assets/intro.gif" width="90%" alt="6-Agent 파이프라인 카드 애니메이션">
+<img src="assets/intro.gif" width="100%" alt="6-Agent 파이프라인 카드 애니메이션">
 
 </div>
 
