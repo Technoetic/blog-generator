@@ -581,21 +581,7 @@ graph LR
 
 **완료 후**: 화면 중앙에 🎉 **블로그 발행 완료** 모달이 뜹니다. `[블로그 열기]` 버튼 클릭 → 새 탭에서 Blogger 포스트가 열립니다.
 
----
 
-## 팀 소개
-
-<table>
-<tr align="center">
-<td>
-<a href="https://github.com/Technoetic">
-<img src="https://github.com/Technoetic.png" width="120" style="border-radius:50%"/>
-<br/><b>전문준</b>
-</a>
-<br/>풀스택 · 에이전트 오케스트레이션 · Excalidraw 파이프라인
-</td>
-</tr>
-</table>
 
 ---
 
