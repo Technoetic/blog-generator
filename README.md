@@ -98,7 +98,7 @@ graph LR
 
 **6개 에이전트 오케스트레이션** 파이프라인 — 비유설계 / 글작성 / 이미지프롬프트 / 검증 / 평가 / 팩트체크 — 가 순차 실행되며 일부 단계는 병렬로 돌아갑니다. 각 에이전트는 Gemini 2.5 Flash (Lite)에서 **역할에 맞는 thinking budget과 temperature**로 독립 최적화되어 있습니다. 글작성 에이전트가 내놓은 모든 `mermaid` 코드블록은 **Excalidraw 손그림 렌더러**로 브라우저에서 PNG로 래스터화되고, 한글은 **Gaegu 손글씨 폰트**로 표시된 뒤 Imgur에 업로드되어 블로그에 삽입됩니다.
 
-검증 에이전트는 **4단계 품질 게이트**(조사 → 측정 → 근거 → 판정)를 강제하고, 팩트체크 에이전트는 **Google Search 함수 호출**로 모든 기술 주장을 검증하며, 평가 에이전트는 7개 루브릭으로 최종 블로그를 채점합니다. 실패한 에이전트는 **실패 사유를 feedback으로 주입받아** 2~3회 개별 재시도됩니다. 최종 포스트는 **Blogger API v3의 Refresh Token 플로우**로 자동 발행됩니다.
+Phase 1에서는 **2-tier 웹 검색**(DuckDuckGo HTML 스크래핑 → 실패 시 Perplexity Sonar 자동 fallback)으로 LLM 컷오프/환각 문제를 선제 차단합니다. 검증 에이전트는 **4단계 품질 게이트**(조사 → 측정 → 근거 → 판정)를 강제하고, 팩트체크 에이전트는 모든 기술 주장을 검증하며, 평가 에이전트는 7개 루브릭으로 최종 블로그를 채점합니다. 실패한 에이전트는 **실패 사유를 feedback으로 주입받아** 2~3회 개별 재시도됩니다. 최종 포스트는 **Blogger API v3의 Refresh Token 플로우**로 자동 발행됩니다.
 
 ---
 
@@ -162,32 +162,43 @@ flowchart LR
 | **팩트체크** | Phase 3b | Agent ⑥ | 기술 주장 F1~F4 통과 | Agent ② 재실행 |
 | **평가** | Phase 4 | Agent ⑤ | 가중 평균 ≥ 3.5 | 구현 에이전트 재실행 (2회) |
 
-### 5. 웹 검색으로 LLM 컷오프 극복
+### 5. 웹 검색으로 LLM 컷오프 극복 (2-tier Fallback)
 
 > [!IMPORTANT]
-> Gemini 지식 컷오프 이후의 기술이나 잘 알려지지 않은 한국어 표기(예: "오픈클로")는 LLM이 유사한 다른 용어(OpenCL)로 대체하는 환각이 발생합니다. Phase 1에서 **실시간 웹 검색**으로 이를 선제 차단합니다.
+> Gemini 지식 컷오프 이후의 기술이나 잘 알려지지 않은 한국어 표기(예: "오픈클로")는 LLM이 유사한 다른 용어(OpenCL)로 대체하는 환각이 발생합니다. Phase 1에서 **2단계 실시간 웹 검색**으로 이를 선제 차단합니다.
 
 ```mermaid
 flowchart LR
-    U["사용자: 오픈클로"] --> S["/api/search<br/>DuckDuckGo HTML 스크래핑"]
-    S --> R["검색 결과 8건"]
-    R --> E["canonical_name 추출<br/>정규식 빈도 카운트 (threshold 3+)"]
-    E --> C["OpenClaw"]
-    C --> T["topic 교체<br/>OpenClaw (사용자 입력: 오픈클로)"]
-    T --> LLM["이후 6 Agent에 정확한 컨텍스트 전달"]
+    U["사용자 입력<br/>오픈클로"] --> DG["/api/search<br/>DuckDuckGo 스크래핑"]
+    DG -->|결과 있음| E["canonical_name 추출<br/>빈도 카운트 threshold 3+"]
+    DG -->|0건/실패| SONAR["Perplexity Sonar<br/>내장 웹 검색"]
+    SONAR --> E2["canonical_name<br/>+ 검색 결과 4~6건"]
+    E --> T["topic 교체"]
+    E2 --> T
+    T --> LLM["6 Agent에 정확한 컨텍스트 전달"]
 
-    style S fill:#339af0,color:#fff
-    style C fill:#40c057,color:#fff
+    style DG fill:#339af0,color:#fff
+    style SONAR fill:#f76707,color:#fff
+    style T fill:#40c057,color:#fff
     style LLM fill:#7950f2,color:#fff
 ```
 
+| 레이어 | 엔진 | 비용 | 트리거 |
+|:---|:---|:---|:---|
+| **1차** | DuckDuckGo HTML 스크래핑 | 무료 | 항상 |
+| **2차** | Perplexity Sonar (BizRouter) | ~₩8/건 | 1차가 0건 반환 시 |
+
+**단계별 로직:**
+
 | 단계 | 설명 |
 |:---|:---|
-| **웹 검색** | DuckDuckGo HTML 페이지 스크래핑 (API 키 불필요) |
-| **canonical 추출** | 검색 결과 title + snippet에서 `[A-Z][a-zA-Z0-9]+` 패턴 빈도 카운트, 3회 이상이면 채택 |
-| **stopword 제거** | `The`, `AI`, `API` 등 흔한 일반 단어 필터링 |
-| **한글 우선 로직** | 사용자 입력에 영문 3자+ 있으면 추출 스킵 (이미 정식 명칭) |
-| **2차 방어** | Phase 1 실패 시에도 Agent ⑥ 팩트체크가 `google_search` tool로 재검증 |
+| 1차 검색 | DuckDuckGo HTML 페이지 스크래핑 (API 키 불필요) |
+| canonical 추출 | title + snippet에서 `[A-Z][a-zA-Z0-9]+` 빈도 카운트, 3회 이상이면 채택 |
+| 한글 우선 로직 | 사용자 입력에 영문 3자+ 있으면 추출 스킵 (이미 정식 명칭) |
+| **2차 Sonar fallback** | DuckDuckGo 공백 시 Perplexity Sonar(내장 웹 검색) 자동 호출 |
+| 3차 방어 | 이것도 실패하면 Agent ⑥ 팩트체크가 최종 차단 |
+
+**실측 검증**: "런웨이ML" (DuckDuckGo 0건) → Sonar가 `canonical=Runway ML` + 공식사이트 4건 반환
 
 ### 6. Blogger API 자동 발행
 
@@ -212,6 +223,7 @@ graph TB
         BIZ["/api/bizrouter<br/>LLM 게이트웨이"]
         IMG["/api/imgur-upload<br/>다이어그램 업로드"]
         SRCH["/api/search<br/>DuckDuckGo 스크래핑"]
+        SONAR_FB["Sonar fallback<br/>BizRouter 경유"]
         BLOG_P["/api/blogger/post<br/>Refresh Token 플로우"]
     end
 
@@ -249,7 +261,7 @@ graph TB
 
 ```mermaid
 flowchart TD
-    USER["사용자 입력<br/>기술 주제"] --> P1["Phase 1<br/>웹 검색 + canonical_name 추출"]
+    USER["사용자 입력<br/>기술 주제"] --> P1["Phase 1<br/>DuckDuckGo → Sonar fallback<br/>+ canonical_name 추출"]
     P1 --> CTX["컨텍스트 패킷"]
     CTX --> AGENT1["Agent ①<br/>비유설계"]
     AGENT1 --> AGENT4A["Agent ④<br/>검증 A"]
@@ -287,7 +299,7 @@ flowchart TD
 
 | Phase | 이름 | 담당 | 결과물 |
 |:---:|:---|:---|:---|
-| **1** | 웹 검색 + 주제 분석 | Orchestrator | 컨텍스트 패킷 |
+| **1** | 웹 검색 (DuckDuckGo → Sonar) + 주제 분석 | Orchestrator | 컨텍스트 패킷 |
 | **2a** | 비유설계 + 검증 A | Agent ① → ④ | 설계서 |
 | **2b** | 글작성 + 이미지프롬프트 (병렬) | Agent ② + ③ | 본문 + 프롬프트 |
 | **3a** | 검증 B | Agent ④ | verdict + fail list |
@@ -363,7 +375,8 @@ graph LR
 | | Gaegu (Google Fonts) | 한글 손글씨 폰트 |
 | **백엔드** | Python 3.11 `http.server` | 경량 정적 파일 + 프록시 |
 | | refresh_token flow | Blogger OAuth2 자동 갱신 |
-| | DuckDuckGo HTML 스크래핑 | 주제 조사 (search 엔드포인트) |
+| | DuckDuckGo HTML 스크래핑 | 주제 조사 1차 (무료, 무인증) |
+| | Perplexity Sonar | 주제 조사 2차 fallback (내장 웹 검색) |
 | **LLM** | BizRouter | OpenAI 호환 LLM 게이트웨이 |
 | | Gemini 2.5 Flash Lite | 검증 · 평가 · 팩트체크 (저지연 · 결정론) |
 | | Gemini 2.5 Flash | 설계 · 작성 (심층 추론 + 창의성) |
@@ -432,9 +445,10 @@ flowchart LR
 | 컴포넌트 | 재시도 | 전략 |
 |:---|:---:|:---|
 | Agent ① 비유설계 | 3회 | `fail_summary` feedback 주입 |
-| Agent ② 글작성 | 2회 | 검증 실패 조항만 재수정 |
+| Agent ② 글작성 | 2회 | 본문 길이 2500+ / mermaid 2+ / 헤딩 4+ 체크, 실패 조항만 재수정 |
 | Agent ③ 이미지 프롬프트 | 1회 | 단순 재호출 |
 | LLM API (503 / 429 / 504) | 3회 | 지수 백오프 (2s → 4s → 8s) |
+| Phase 1 웹 검색 | 2-tier | DuckDuckGo → Perplexity Sonar |
 | mermaid 파싱 | 2회 | sanitize → bullet fallback |
 | 팝업 차단 (window.open) | — | 중앙 모달 + 클릭 → 새 탭 |
 
