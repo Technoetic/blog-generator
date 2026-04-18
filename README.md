@@ -162,7 +162,34 @@ flowchart LR
 | **팩트체크** | Phase 3b | Agent ⑥ | 기술 주장 F1~F4 통과 | Agent ② 재실행 |
 | **평가** | Phase 4 | Agent ⑤ | 가중 평균 ≥ 3.5 | 구현 에이전트 재실행 (2회) |
 
-### 5. Blogger API 자동 발행
+### 5. 웹 검색으로 LLM 컷오프 극복
+
+> [!IMPORTANT]
+> Gemini 지식 컷오프 이후의 기술이나 잘 알려지지 않은 한국어 표기(예: "오픈클로")는 LLM이 유사한 다른 용어(OpenCL)로 대체하는 환각이 발생합니다. Phase 1에서 **실시간 웹 검색**으로 이를 선제 차단합니다.
+
+```mermaid
+flowchart LR
+    U["사용자: 오픈클로"] --> S["/api/search<br/>DuckDuckGo HTML 스크래핑"]
+    S --> R["검색 결과 8건"]
+    R --> E["canonical_name 추출<br/>정규식 빈도 카운트 (threshold 3+)"]
+    E --> C["OpenClaw"]
+    C --> T["topic 교체<br/>OpenClaw (사용자 입력: 오픈클로)"]
+    T --> LLM["이후 6 Agent에 정확한 컨텍스트 전달"]
+
+    style S fill:#339af0,color:#fff
+    style C fill:#40c057,color:#fff
+    style LLM fill:#7950f2,color:#fff
+```
+
+| 단계 | 설명 |
+|:---|:---|
+| **웹 검색** | DuckDuckGo HTML 페이지 스크래핑 (API 키 불필요) |
+| **canonical 추출** | 검색 결과 title + snippet에서 `[A-Z][a-zA-Z0-9]+` 패턴 빈도 카운트, 3회 이상이면 채택 |
+| **stopword 제거** | `The`, `AI`, `API` 등 흔한 일반 단어 필터링 |
+| **한글 우선 로직** | 사용자 입력에 영문 3자+ 있으면 추출 스킵 (이미 정식 명칭) |
+| **2차 방어** | Phase 1 실패 시에도 Agent ⑥ 팩트체크가 `google_search` tool로 재검증 |
+
+### 6. Blogger API 자동 발행
 
 - **Refresh Token 플로우** — 토큰 서버 저장, 5분 버퍼 자동 갱신
 - **마크다운 → HTML** — 인라인 스타일 주입 (Blogger `<style>` sanitize 우회)
