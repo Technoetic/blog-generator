@@ -119,9 +119,12 @@ class PipelineUI {
 	}
 
 	// 재시도 발생 시각화: phase-icon에 ↻ 아이콘 + shake/pulse, 행 우측에 RETRY 토스트, sub-status 강조
+	// 게이지도 0%로 리셋 후 재시작 (이전 사이클의 100%/95% 상태 정리)
 	static markRetry(phaseId, attempt, maxAttempts, reason) {
 		const row = document.getElementById(phaseId);
 		if (!row) return;
+		// 게이지 0%로 리셋 후 running 애니메이션 재시작
+		PipelineUI._updateGauge(phaseId, "running");
 		const icon = row.querySelector(".phase-icon");
 		if (icon) {
 			icon.classList.remove("retry-shake");
