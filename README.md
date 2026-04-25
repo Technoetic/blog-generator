@@ -477,14 +477,14 @@ flowchart LR
 LLM이 마크다운 테이블 헤더 구분선(`|---|---|`)을 빠뜨리는 확률적 실패를 **후처리 레벨에서 차단**합니다.
 
 ```mermaid
-flowchart LR
+flowchart TD
     MD["마크다운"] --> DET["_fixTables<br/>연속 | 라인 감지"]
     DET --> CHK{"구분선 있음?"}
     CHK -->|예| PASS["그대로 통과"]
-    CHK -->|아니오| SENT["__HIDE_HEADER__<br/>sentinel 삽입"]
+    CHK -->|아니오| SENT["zhdrsntz<br/>sentinel 삽입"]
     SENT --> MARKED["marked.parse"]
-    MARKED --> POST["&lt;thead&gt; sentinel<br/>regex 제거"]
-    POST --> HTML["깨끗한 &lt;table&gt;"]
+    MARKED --> POST["thead sentinel<br/>regex 제거"]
+    POST --> HTML["깨끗한 table"]
     PASS --> HTML
 
     style SENT fill:#fab005,color:#000
@@ -599,7 +599,7 @@ railway up
 ### 배포 흐름
 
 ```mermaid
-graph LR
+graph TD
     DEV["로컬 개발"] -->|git push| GH["GitHub"]
     GH -->|webhook| RAIL["Railway"]
     RAIL -->|Dockerfile| BLD["Docker 빌드"]
