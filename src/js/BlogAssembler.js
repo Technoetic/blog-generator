@@ -27,24 +27,95 @@ class BlogAssembler {
 		throw lastErr || new Error("Excalidraw libs 로드 실패");
 	}
 
+	// 파스텔 팔레트 (박스 배경 로테이션용)
+	static _PALETTE = [
+		{ bg: "#dbeafe", stroke: "#1e40af" }, // blue
+		{ bg: "#fef3c7", stroke: "#92400e" }, // amber
+		{ bg: "#dcfce7", stroke: "#166534" }, // green
+		{ bg: "#fce7f3", stroke: "#9d174d" }, // pink
+		{ bg: "#e0e7ff", stroke: "#3730a3" }, // indigo
+		{ bg: "#ffedd5", stroke: "#9a3412" }, // orange
+	];
+
+	// 사각형이 다른 shape를 공간적으로 포함하면 "컨테이너(subgraph)"로 판단
+	static _isContainer(el, allShapes) {
+		if (el.type !== "rectangle") return false;
+		const pad = 2;
+		for (const other of allShapes) {
+			if (other === el) continue;
+			if (other.type !== "rectangle" && other.type !== "ellipse" && other.type !== "diamond") continue;
+			if (
+				other.x >= el.x - pad &&
+				other.y >= el.y - pad &&
+				other.x + other.width <= el.x + el.width + pad &&
+				other.y + other.height <= el.y + el.height + pad
+			) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// mermaid 노드 sanitize — 라벨 내 특수문자 제거 + 다이아몬드/원 강제 사각형화 + em-dash 중복 정규화.
+	static _sanitizeMermaid(code) {
+		const clean = (s) => s.replace(/[()"'`:<>]/g, " ").replace(/\s+/g, " ").trim();
+		let out = code;
+		// 1) 다이아몬드 {...} → 사각형 [...] 강제 변환 (LLM이 규칙 위반 시 방어)
+		out = out.replace(/\{([^{}]*)\}/g, (_, inner) => `[${clean(inner)}]`);
+		// 2) 이중 원 ((...)) → 사각형 [...] 강제 변환
+		out = out.replace(/\(\(([^()]*)\)\)/g, (_, inner) => `[${clean(inner)}]`);
+		// 3) [text] 라벨 내부 특수문자 정리
+		out = out.replace(/\[([^\[\]]*)\]/g, (_, inner) => `[${clean(inner)}]`);
+		// 4) em-dash 중복 (—\s*—) → 단일 em-dash
+		out = out.replace(/—\s*—+/g, "—");
+		// 5) hyphen-em-dash 혼용 (- —, — -) → 단일 em-dash
+		out = out.replace(/\s+-\s+—|—\s+-\s+/g, " — ");
+		return out;
+	}
+
 	// mermaid 코드 → PNG dataURL (Canvas 경로)
-	static async mermaidToPngDataUrl(mermaidCode, scale = 2) {
+	static async mermaidToPngDataUrl(mermaidCode, scale = 3) {
 		const { mte, api } = await BlogAssembler._loadExcalidrawLibs();
-		const { elements } = await mte.parseMermaidToExcalidraw(mermaidCode);
-		// label을 정식 text element로 확장 (한글 표시 보장)
+		// sanitize를 항상 1차에 적용 (다이아몬드/em-dash 중복 등 LLM 실수 사전 차단)
+		const cleaned1 = BlogAssembler._sanitizeMermaid(mermaidCode);
+		let elements;
+		try {
+			const r = await mte.parseMermaidToExcalidraw(cleaned1);
+			elements = r.elements;
+		} catch (e1) {
+			console.warn("mermaid 파싱 1차 실패, 추가 sanitize 후 재시도:", e1.message);
+			const cleaned2 = BlogAssembler._sanitizeMermaid(cleaned1);
+			const r = await mte.parseMermaidToExcalidraw(cleaned2);
+			elements = r.elements;
+		}
+		const shapeEls = elements.filter((e) => ["rectangle", "ellipse", "diamond"].includes(e.type));
+		// 각 shape를 파스텔 컬러 + 손그림 스타일로 재구성 (한글 라벨 포함)
 		const skeleton = [];
+		let shapeIdx = 0;
 		for (const el of elements) {
 			if (el.type === "rectangle" || el.type === "ellipse" || el.type === "diamond") {
+				const isContainer = BlogAssembler._isContainer(el, shapeEls);
+				const color = BlogAssembler._PALETTE[shapeIdx % BlogAssembler._PALETTE.length];
+				shapeIdx++;
 				const item = {
 					type: el.type,
 					x: el.x, y: el.y,
 					width: el.width, height: el.height,
 					id: el.id,
-					strokeColor: el.strokeColor,
-					backgroundColor: el.backgroundColor,
+					strokeColor: isContainer ? "#94a3b8" : color.stroke,
+					backgroundColor: isContainer ? "transparent" : color.bg,
+					fillStyle: isContainer ? "solid" : "hachure",
+					strokeWidth: isContainer ? 1 : 2,
+					roughness: isContainer ? 1 : 2,
+					strokeStyle: isContainer ? "dashed" : "solid",
 				};
 				if (el.label && el.label.text) {
-					item.label = { text: el.label.text, fontFamily: 1 };
+					item.label = {
+						text: el.label.text,
+						fontFamily: 1,
+						fontSize: isContainer ? 16 : 20,
+						strokeColor: isContainer ? "#64748b" : color.stroke,
+					};
 				}
 				skeleton.push(item);
 			} else if (el.type === "arrow") {
@@ -52,7 +123,9 @@ class BlogAssembler {
 					type: "arrow",
 					x: el.x, y: el.y,
 					width: el.width, height: el.height,
-					strokeColor: el.strokeColor,
+					strokeColor: "#475569",
+					strokeWidth: 2,
+					roughness: 2,
 				};
 				if (el.startBinding) item.start = { id: el.startBinding.elementId };
 				if (el.endBinding) item.end = { id: el.endBinding.elementId };
@@ -61,13 +134,80 @@ class BlogAssembler {
 			}
 		}
 		const rebuilt = api.convertToExcalidrawElements(skeleton);
-		const canvas = await api.exportToCanvas({
-			elements: rebuilt,
-			appState: { exportBackground: true, viewBackgroundColor: "#ffffff" },
-			files: {},
-			getDimensions: (w, h) => ({ width: w * scale, height: h * scale, scale }),
-		});
-		return canvas.toDataURL("image/png");
+
+		// SVG 경로 시도 (한글 폰트 Gaegu 주입)
+		try {
+			const svg = await api.exportToSvg({
+				elements: rebuilt,
+				appState: {
+					exportBackground: true,
+					viewBackgroundColor: "#fafafa",
+					exportPadding: 30,
+				},
+				files: {},
+			});
+			// 한글이 포함된 text에 Gaegu 적용
+			const texts = svg.querySelectorAll("text");
+			for (const t of texts) {
+				const c = t.textContent || "";
+				if (/[\uAC00-\uD7A3]/.test(c)) {
+					t.setAttribute("font-family", "'Gaegu', 'Jua', 'Malgun Gothic', sans-serif");
+					const s = t.getAttribute("style") || "";
+					t.setAttribute("style", s + "; font-family: 'Gaegu', 'Jua', 'Malgun Gothic', sans-serif !important; font-weight: 700;");
+				}
+			}
+			// @font-face 주입
+			const styleEl = document.createElementNS("http://www.w3.org/2000/svg", "style");
+			styleEl.textContent = "@import url('https://fonts.googleapis.com/css2?family=Gaegu:wght@700&family=Jua&display=swap'); text { font-family: 'Gaegu', 'Jua', 'Malgun Gothic', sans-serif !important; }";
+			svg.insertBefore(styleEl, svg.firstChild);
+
+			// SVG → PNG 래스터화 (Gaegu 로드 후)
+			await (document.fonts?.load?.("20px Gaegu") ?? Promise.resolve());
+			const svgStr = new XMLSerializer().serializeToString(svg);
+			const svgBlob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
+			const url = URL.createObjectURL(svgBlob);
+			const img = new Image();
+			img.crossOrigin = "anonymous";
+			await new Promise((resolve, reject) => {
+				img.onload = resolve;
+				img.onerror = reject;
+				img.src = url;
+			});
+			const w = parseInt(svg.getAttribute("width")) || 800;
+			const h = parseInt(svg.getAttribute("height")) || 600;
+			const canvas = document.createElement("canvas");
+			canvas.width = w * scale;
+			canvas.height = h * scale;
+			const ctx = canvas.getContext("2d");
+			ctx.fillStyle = "#fafafa";
+			ctx.fillRect(0, 0, canvas.width, canvas.height);
+			ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+			URL.revokeObjectURL(url);
+			return canvas.toDataURL("image/png");
+		} catch (e) {
+			console.warn("SVG 경로 실패, Canvas fallback:", e.message);
+			const canvas = await api.exportToCanvas({
+				elements: rebuilt,
+				appState: { exportBackground: true, viewBackgroundColor: "#fafafa" },
+				files: {},
+				getDimensions: (w, h) => ({ width: w * scale, height: h * scale, scale }),
+			});
+			return canvas.toDataURL("image/png");
+		}
+	}
+
+	// mermaid 코드에서 A[...] --> B[...] 패턴을 추출해 bullet 목록으로 변환.
+	static _mermaidToTextList(code) {
+		const lines = code.split("\n");
+		const bullets = [];
+		for (const line of lines) {
+			const m = line.match(/\[([^\]]+)\][^\[]*?-->[^\[]*?\[([^\]]+)\]/);
+			if (m) {
+				bullets.push(`- **${m[1].trim()}** → ${m[2].trim()}`);
+			}
+		}
+		if (bullets.length === 0) return "";
+		return bullets.join("\n");
 	}
 
 	// 본문 안 ```mermaid 블록을 imgur URL로 변환 후 마크다운 이미지로 치환
@@ -104,7 +244,9 @@ class BlogAssembler {
 				replacements.push({ full: b.full, replacement: `![diagram](${imageUrl})` });
 			} catch (e) {
 				console.warn(`mermaid 변환 실패 (블록 #${replacements.length}):`, e.message);
-				// 실패 시 원본 코드블록 유지
+				// 실패 시 텍스트 목록으로 대체 (raw 코드 노출 방지)
+				const textFallback = BlogAssembler._mermaidToTextList(b.code);
+				replacements.push({ full: b.full, replacement: textFallback });
 			}
 		}
 
@@ -115,13 +257,79 @@ class BlogAssembler {
 		return result;
 	}
 
+	// GFM 테이블 헤더/구분선 누락 자동 보정 + 깨진 separator 수리.
+	// sentinel은 marked bold(`__`) 문법과 충돌 피하려 언더스코어 없는 토큰 사용.
+	static _fixTables(md) {
+		const HIDE_TOKEN = "zhdrsntz"; // 마크다운이 건드리지 않는 lowercase 토큰
+		const isRowLoose = (s) => /^\s*\|.*\|?\s*$/.test(s) && s.includes("|");
+		const isSeparatorLoose = (s) => /-/.test(s) && /^\s*\|?[\s:|-]+\|?\s*$/.test(s);
+
+		const countCols = (line) => {
+			const t = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+			return t.split("|").length;
+		};
+
+		const lines = md.split("\n");
+		const out = [];
+		let i = 0;
+		while (i < lines.length) {
+			const line = lines[i];
+			if (isRowLoose(line)) {
+				const block = [];
+				let j = i;
+				while (j < lines.length && isRowLoose(lines[j])) {
+					block.push(lines[j]);
+					j++;
+				}
+				// 깨진 separator 보정: block[1]이 separator 후보인데 컬럼 수가 block[0]와 다르면 재생성
+				if (block.length >= 2 && isSeparatorLoose(block[1])) {
+					const headerCols = countCols(block[0]);
+					const sepCols = countCols(block[1]);
+					if (sepCols !== headerCols) {
+						block[1] = "|" + Array(headerCols).fill("---").join("|") + "|";
+					}
+				}
+				const hasSeparator = block.length >= 2 && isSeparatorLoose(block[1]);
+				const cols = countCols(block[0]);
+				// 단일 컬럼 테이블 → 불릿 리스트로 변환 (시각 낭비 방지)
+				if (cols === 1) {
+					const cleanCell = (s) => s.trim().replace(/^\|/, "").replace(/\|$/, "").trim();
+					// separator 있으면 첫 행이 헤더, 없으면 모두 데이터
+					const dataStart = hasSeparator ? 2 : 0;
+					const headerText = hasSeparator ? cleanCell(block[0]) : "";
+					const items = block.slice(dataStart).map((r) => cleanCell(r)).filter(Boolean);
+					if (items.length > 0) {
+						if (headerText) out.push(`**${headerText}**`, "");
+						for (const it of items) out.push(`- ${it}`);
+						out.push("");
+						i = j;
+						continue;
+					}
+				}
+				if (!hasSeparator && block.length >= 2) {
+					const sep = "|" + Array(cols).fill("---").join("|") + "|";
+					const hiddenHeader = "|" + Array(cols).fill(HIDE_TOKEN).join("|") + "|";
+					out.push(hiddenHeader, sep, ...block);
+				} else {
+					out.push(...block);
+				}
+				i = j;
+				continue;
+			}
+			out.push(line);
+			i++;
+		}
+		return out.join("\n");
+	}
+
 	static markdownToHtml(md) {
 		marked.setOptions({ breaks: true, gfm: true });
 
-		const processed = md.replace(
+		let processed = md.replace(
 			/<!--\s*IMAGE:\s*(\w+)\s*-->/g,
 			'<div style="text-align:center;padding:16px 0;"><span style="background:#667eea22;border:1px dashed #667eea;border-radius:8px;padding:8px 20px;font-size:13px;color:#667eea;">🖼️ Image: $1</span></div>',
 		);
+		processed = BlogAssembler._fixTables(processed);
 
 		// 한글-** 경계 보정: marked의 GFM은 단어 경계를 ASCII 기준으로 봄.
 		// "**한글**한글" 같은 패턴은 변환 안 되므로 marked 호출 전에 직접 strong 치환.
@@ -152,24 +360,46 @@ class BlogAssembler {
 		inject("th", "background:#667eea;color:#fff;padding:10px 14px;text-align:left;font-weight:600;border:1px solid #e0e0e0;");
 		inject("td", "padding:10px 14px;border:1px solid #e0e0e0;");
 		inject("pre", "background:#1e1e2e;color:#cdd6f4;padding:16px 20px;border-radius:10px;overflow-x:auto;font-size:0.9em;line-height:1.6;margin:1em 0;");
+		// 인라인 <code>: 순한글/한글+공백+기호만 들어 있으면 단순 라벨로 보고 본문 폰트 + 옅은 배경만 적용.
+		// 진짜 코드(영문/숫자/특수문자 포함)는 모노스페이스 유지.
+		// pre 내부 code는 건드리지 않기 위해 lookbehind로 제외.
+		html = html.replace(/<code(\s[^>]*)?>([^<]*)<\/code>/g, (match, attrs, inner) => {
+			if (match.includes("style=")) return match;
+			const isHangulLabel = /^[\sㄱ-ㆎ가-힣·,./?!()\-—…]+$/.test(inner) && /[가-힣]/.test(inner);
+			const style = isHangulLabel
+				? "background:#f1f3f5;color:#495057;padding:1px 6px;border-radius:4px;font-family:inherit;font-weight:600;"
+				: "font-family:'Consolas','Monaco',monospace,'Malgun Gothic','Apple SD Gothic Neo','Noto Sans KR',sans-serif;";
+			return `<code${attrs || ""} style="${style}">${inner}</code>`;
+		});
 		inject("blockquote", "border-left:4px solid #667eea;background:#f8f9ff;padding:12px 20px;margin:1em 0;border-radius:0 8px 8px 0;color:#444;");
 		inject("hr", "border:none;border-top:1px solid #e0e0e0;margin:2em 0;");
 		inject("img", "max-width:100%;height:auto;border-radius:12px;margin:1.5em auto;display:block;box-shadow:0 4px 20px rgba(0,0,0,0.15);");
 		inject("p", "line-height:1.8;margin:0.8em 0;");
 
+		// 합성된 빈 헤더 행(zhdrsntz) 숨김 처리 — 마크다운이 건드리지 않는 토큰
+		html = html.replace(
+			/<thead>\s*<tr[^>]*>(\s*<th[^>]*>\s*zhdrsntz\s*<\/th>\s*)+<\/tr>\s*<\/thead>/g,
+			"",
+		);
+
 		return `<div class="blog-content">${html}</div>`;
 	}
 
 	// structure_mapping → mermaid 다이어그램 (결정론적 fallback).
+	// 노드 형식: A[기술용어 — 비유대상] (em-dash 연결). LLM 실패 시에도 기술/비유 매핑 유지.
 	static buildMermaidDiagram(structureMapping) {
 		if (!structureMapping || structureMapping.length === 0) return "";
-		const lines = ["```mermaid", "graph LR"];
+		const lines = ["```mermaid", "graph TD"];
+		const clean = (s) => (s || "").replace(/[\[\]()"'`:<>{}]/g, " ").replace(/\s+/g, " ").trim();
 		const items = structureMapping.slice(0, 5);
 		for (let i = 0; i < items.length; i++) {
 			const m = items[i];
-			const tech = (m.tech || "").replace(/[\[\]]/g, "");
-			const ana = (m.analogy || "").replace(/[\[\]]/g, "");
-			lines.push(`  T${i}[${tech}] --> A${i}[${ana}]`);
+			const tech = clean(m.tech);
+			const ana = clean(m.analogy);
+			const next = items[i + 1] ? `N${i + 1}` : null;
+			const label = `N${i}[${tech} — ${ana}]`;
+			if (next) lines.push(`  ${label} --> N${i + 1}[${clean(items[i + 1].tech)} — ${clean(items[i + 1].analogy)}]`);
+			else if (i === 0) lines.push(`  ${label}`);
 		}
 		lines.push("```");
 		return lines.join("\n");
@@ -284,6 +514,15 @@ class BlogAssembler {
 		const middleUrl = imageUrls?.middle;
 		const outroUrl = imageUrls?.outro;
 
+		// 이미지 누락 가드 — 발행용 URL 3개가 모두 없으면 발행 불가 (이미지 없이 발행 차단)
+		const missing = [];
+		if (!introUrl) missing.push("intro");
+		if (!middleUrl) missing.push("middle");
+		if (!outroUrl) missing.push("outro");
+		if (missing.length > 0) {
+			throw new Error(`이미지 누락 (${missing.join(", ")}) — 발행 차단. Phase 3c 실패 가능성.`);
+		}
+
 		// 신: blog.body 단일 필드. 구: front_half/back_half (호환).
 		let front, back;
 		if (blog.body) {
@@ -295,32 +534,20 @@ class BlogAssembler {
 			back = blog.back_half || "";
 		}
 
-		// 미리보기용: base64
-		const introBlock = introImg
-			? `![인트로](${introImg})`
-			: `> 🖼️ ${prompts.intro_prompt}`;
-		const middleBlock = middleImg
-			? `![중간](${middleImg})`
-			: `> 🖼️ ${prompts.middle_prompt}`;
-		const outroBlock = outroImg
-			? `![아웃트로](${outroImg})`
-			: `> 🖼️ ${prompts.outro_prompt}`;
-		const assembled = `${introBlock}\n\n${front}\n\n${middleBlock}\n\n${back}\n\n${outroBlock}`;
+		// 미리보기용: base64. 이미지 없으면 블록 자체 생략(프롬프트 노출 차단).
+		const introBlock = introImg ? `![인트로](${introImg})\n\n` : "";
+		const middleBlock = middleImg ? `![중간](${middleImg})\n\n` : "";
+		const outroBlock = outroImg ? `\n\n![아웃트로](${outroImg})` : "";
+		const assembled = `${introBlock}${front}\n\n${middleBlock}${back}${outroBlock}`;
 
 		// Blogger 발행용: Imgur URL
-		const introPub = introUrl
-			? `![인트로](${introUrl})`
-			: `> 🖼️ ${prompts.intro_prompt}`;
-		const middlePub = middleUrl
-			? `![중간](${middleUrl})`
-			: `> 🖼️ ${prompts.middle_prompt}`;
-		const outroPub = outroUrl
-			? `![아웃트로](${outroUrl})`
-			: `> 🖼️ ${prompts.outro_prompt}`;
-		const assembledPublish = `${introPub}\n\n${front}\n\n${middlePub}\n\n${back}\n\n${outroPub}`;
+		const introPub = introUrl ? `![인트로](${introUrl})\n\n` : "";
+		const middlePub = middleUrl ? `![중간](${middleUrl})\n\n` : "";
+		const outroPub = outroUrl ? `\n\n![아웃트로](${outroUrl})` : "";
+		const assembledPublish = `${introPub}${front}\n\n${middlePub}${back}${outroPub}`;
 
-		// 평가용: 텍스트만
-		const assembledText = `> 🖼️ ${prompts.intro_prompt}\n\n${front}\n\n> 🖼️ ${prompts.middle_prompt}\n\n${back}\n\n> 🖼️ ${prompts.outro_prompt}`;
+		// 평가용: 텍스트만 — 이미지 프롬프트 대신 본문만
+		const assembledText = `${front}\n\n${back}`;
 
 		return { assembled, assembledPublish, assembledText };
 	}
