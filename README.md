@@ -227,35 +227,40 @@ flowchart TD
 ```mermaid
 graph TB
     subgraph client["클라이언트 — Browser"]
-        UI["index.html"]
-        PIPE["Pipeline.js<br/>오케스트레이터"]
-        ASM["BlogAssembler.js<br/>마크다운 + Excalidraw"]
-        AUTH["AuthManager.js<br/>Blogger 발행"]
+        UI["index.html<br/>(글래스모피즘 UI)"]
+        PIPE["Pipeline.js<br/>오케스트레이터 + AbortController"]
+        ASM["BlogAssembler.js<br/>마크다운 + Excalidraw 변환"]
+        UI_MGR["PipelineUI.js<br/>게이지/sub-status/필살기 모달"]
+        AUTH["AuthManager.js<br/>Blogger 수동 발행"]
     end
 
-    subgraph server["FastAPI Proxy — Railway"]
-        BIZ["/api/bizrouter<br/>LLM 게이트웨이"]
-        IMG["/api/imgur-upload<br/>다이어그램 업로드"]
+    subgraph server["Python http.server — Railway<br/>(ThreadingHTTPServer, 요청별 스레드)"]
+        BIZ["/api/bizrouter<br/>LLM 게이트웨이 프록시"]
+        IMG["/api/imgur-upload<br/>서버측 7회 재시도"]
         SRCH["/api/search<br/>DuckDuckGo 스크래핑"]
-        SONAR_FB["Sonar fallback<br/>BizRouter 경유"]
-        BLOG_P["/api/blogger/post<br/>Refresh Token 플로우"]
+        BLOG_P["/api/blogger/post<br/>Refresh Token 자동갱신"]
     end
 
     subgraph external["외부 API"]
-        BR[("BizRouter<br/>Gemini 2.5 Flash")]
-        GOOG[("Google Search<br/>function calling")]
-        IMGUR[("Imgur API")]
-        BLOGGER[("Blogger API v3")]
+        BR[("BizRouter<br/>OpenAI 호환 게이트웨이")]
+        GM[("Gemini 2.5 Flash/Lite<br/>비유설계/글작성/검증/평가")]
+        SONAR[("Perplexity Sonar<br/>Phase 1 fallback + Phase 3b 팩트체크<br/>내장 웹 검색")]
+        NB[("Nano Banana<br/>이미지 생성 (7회 재시도)")]
+        IMGUR[("Imgur API<br/>이미지 호스팅")]
+        BLOGGER[("Blogger API v3<br/>OAuth2")]
     end
 
     UI --> PIPE
     PIPE --> ASM
+    PIPE --> UI_MGR
     PIPE --> BIZ
     PIPE --> IMG
     PIPE --> SRCH
     AUTH --> BLOG_P
     BIZ --> BR
-    BR --> GOOG
+    BR --> GM
+    BR --> SONAR
+    BR --> NB
     IMG --> IMGUR
     BLOG_P --> BLOGGER
 
@@ -265,7 +270,7 @@ graph TB
 ```
 
 > [!NOTE]
-> 모든 API 키는 **FastAPI 프록시 서버**에 격리됩니다. 클라이언트는 `BIZROUTER_KEY`, `IMGUR_CLIENT_ID`, `GOOGLE_REFRESH_TOKEN`을 절대 알지 못합니다.
+> 모든 API 키는 **Python http.server 프록시**에 격리됩니다. 클라이언트는 `BIZROUTER_KEY`, `IMGUR_CLIENT_ID`, `GOOGLE_REFRESH_TOKEN`을 절대 알지 못합니다. ThreadingHTTPServer 덕에 이미지 3장 병렬 업로드 시에도 서버측 retry가 다른 요청을 블록하지 않습니다.
 
 ---
 
