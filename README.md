@@ -2,7 +2,7 @@
 
 # 비유 블로그 생성기
 
-### 6-Agent 오케스트레이션 × Gemini 2.5 Flash × Excalidraw 손그림 파이프라인
+### 6-Agent 오케스트레이션 × 실시간 웹 검색 × 손그림 다이어그램 × 자동 발행
 
 [![Live Demo](https://img.shields.io/badge/라이브_데모-Railway-blueviolet?style=for-the-badge)](https://blog-generator-production-5f73.up.railway.app/index.html)
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
@@ -67,7 +67,7 @@ graph LR
     subgraph solutions["본 프로젝트의 해결책"]
         S1["6 Agent 파이프라인<br/>역할 분리 + 재시도"]
         S2["Agent ① 비유설계<br/>+ Agent ④ 검증 게이트"]
-        S3["Agent ⑥ 팩트체크<br/>Google Search 도구"]
+        S3["Agent ⑥ 팩트체크<br/>Perplexity Sonar 웹 검색"]
         S4["mermaid → Excalidraw<br/>손그림 PNG 자동 변환"]
         S5["Blogger API v3<br/>Refresh Token 자동 발행"]
     end
@@ -205,6 +205,20 @@ flowchart LR
 - **Refresh Token 플로우** — 토큰 서버 저장, 5분 버퍼 자동 갱신
 - **마크다운 → HTML** — 인라인 스타일 주입 (Blogger `<style>` sanitize 우회)
 - **테이블 헤더 자동 보정** — LLM이 header 누락 시 sentinel 삽입 → 후처리 제거
+
+### 7. 게임 UX — 진행감 + 쾌감
+
+> [!TIP]
+> 5분이 걸릴 수도 있는 파이프라인을 **게임 점수판처럼** 만들어 사용자가 멈춘 게 아닌지 의심할 일이 없습니다.
+
+- **글래스모피즘 UI** — 라디얼 그라데이션 배경 + 24px 블러 + saturate(180%)
+- **Phase 게이지 % 표시** — 예상 시간 기반 점근(95% asymptotic) 진행도
+- **전체 % 라이브 카운트** — 매초 0.1% 단위 부드러운 업데이트
+- **토큰/비용 ticker** — 매초 phase별 예상 rate로 가산, 실측 도달 시 snap + 골드 펄스 + delta 토스트
+- **스테이지 클리어 4중 콤보** — 아이콘 1.35× 글로우, 행 그린 sweep, sparkle 8개 폭발, "✦ CLEAR!" 토스트
+- **필살기 발동 모달** — 발행 완료 시 화면 플래시 + 별빛 광선 + 컨페티 40개 + 모달 슬램 + "QUEST CLEAR / BLOG PUBLISHED!" 골드 텍스트 + Stat 카드 (TOKENS/COST/TIME)
+- **취소 버튼** — 진행 중 즉시 abort (AbortController)
+- **sub-status 라이브** — 예: `intro 생성 3/7 · middle 대기 8s (4/7) · outro ✓`
 
 ---
 
@@ -376,7 +390,8 @@ graph LR
 | **백엔드** | Python 3.11 `http.server` | 경량 정적 파일 + 프록시 |
 | | refresh_token flow | Blogger OAuth2 자동 갱신 |
 | | DuckDuckGo HTML 스크래핑 | 주제 조사 1차 (무료, 무인증) |
-| | Perplexity Sonar | 주제 조사 2차 fallback (내장 웹 검색) |
+| | Perplexity Sonar | 주제 조사 2차 fallback + Phase 3b 팩트체크 (내장 웹 검색) |
+| | ThreadingHTTPServer | 요청별 스레드 — 이미지 병렬 업로드 블로킹 차단 |
 | **LLM** | BizRouter | OpenAI 호환 LLM 게이트웨이 |
 | | Gemini 2.5 Flash Lite | 검증 · 평가 · 팩트체크 (저지연 · 결정론) |
 | | Gemini 2.5 Flash | 설계 · 작성 (심층 추론 + 창의성) |
@@ -445,12 +460,17 @@ flowchart LR
 | 컴포넌트 | 재시도 | 전략 |
 |:---|:---:|:---|
 | Agent ① 비유설계 | 3회 | `fail_summary` feedback 주입 |
-| Agent ② 글작성 | 2회 | 본문 길이 2500+ / mermaid 2+ / 헤딩 4+ 체크, 실패 조항만 재수정 |
+| Agent ② 글작성 | 2회 | 길이 2500+ / mermaid 2+ / 헤딩 4+ / corrupted(JSON-in-JSON, wsFlood) 검증 |
 | Agent ③ 이미지 프롬프트 | 1회 | 단순 재호출 |
 | LLM API (503 / 429 / 504) | 3회 | 지수 백오프 (2s → 4s → 8s) |
 | Phase 1 웹 검색 | 2-tier | DuckDuckGo → Perplexity Sonar |
-| mermaid 파싱 | 2회 | sanitize → bullet fallback |
-| 팝업 차단 (window.open) | — | 중앙 모달 + 클릭 → 새 탭 |
+| Phase 3b 팩트체크 | — | Sonar 내장 웹 검색 (학습 지식 의존 X) |
+| Nano Banana 이미지 생성 | 7회 | 지수 백오프 (2/4/8/15/30/60s, fallback 금지) |
+| Imgur 업로드 (서버) | 7회 | 누적 ~2분 백오프 (502/500 자동 회복) |
+| mermaid 파싱 | 2회 | sanitize → diamond/circle 강제 사각형화 → bullet fallback |
+| fetch 타임아웃 | — | LLM 90s / 이미지 60s / 업로드 180s (AbortController) |
+| 팝업 차단 (window.open) | — | 게임 victory 모달 + 클릭 → 새 탭 |
+| 사용자 취소 | — | AbortController + `_checkCancelled()` 가드 |
 
 ### 테이블 렌더링 자동 보정
 
