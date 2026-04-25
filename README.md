@@ -353,24 +353,30 @@ sequenceDiagram
 ## 기술 스택
 
 ```mermaid
-graph LR
+graph TD
     subgraph frontend["프론트엔드"]
         VJS["Vanilla JS<br/>7 Class 모듈"]
+        UI_MGR["PipelineUI.js<br/>게이지/필살기 모달/ticker"]
+        GLASS["글래스모피즘<br/>backdrop-filter blur(24px)"]
         MARKED["marked.js"]
         EXCAL["Excalidraw<br/>mermaid-to-excalidraw"]
         GAEGU["Gaegu Font<br/>Google Fonts"]
+        ABORT["AbortController<br/>취소 + fetch timeout"]
     end
 
     subgraph backendStack["백엔드"]
         PY["Python 3.11<br/>http.server"]
+        THR["ThreadingHTTPServer<br/>요청별 스레드"]
         PROXY["Proxy Handlers<br/>CORS + 키 격리"]
+        IMGRTR["Imgur 7회 retry<br/>지수 백오프"]
     end
 
     subgraph aiStack["AI / LLM"]
         BIZ["BizRouter<br/>OpenAI 호환 게이트웨이"]
-        GM["Gemini 2.5 Flash Lite"]
-        GM2["Gemini 2.5 Flash"]
-        GSEARCH["Google Search Tool<br/>function calling"]
+        GM2["Gemini 2.5 Flash<br/>설계/작성"]
+        GM["Gemini 2.5 Flash Lite<br/>검증/평가/이미지프롬프트"]
+        SONAR["Perplexity Sonar<br/>웹 검색 (내장)"]
+        NB["Nano Banana<br/>gemini-2.5-flash-image"]
     end
 
     subgraph infra["인프라 / DevOps"]
@@ -387,20 +393,24 @@ graph LR
 
 | 분류 | 기술 | 용도 |
 |:---|:---|:---|
-| **프론트엔드** | Vanilla JavaScript (ES2024) | 7개 Class 모듈 (Pipeline, BlogAssembler, ApiClient 등) |
+| **프론트엔드** | Vanilla JavaScript (ES2024) | 7개 Class 모듈 (Pipeline, BlogAssembler, ApiClient, PipelineUI 등) |
+| | 글래스모피즘 CSS | `backdrop-filter: blur(24px) saturate(180%)` + 라디얼 그라데이션 배경 |
+| | 게임 UX (CSS keyframes) | Phase 게이지/필살기 모달/sparkle 폭발/스테이지 클리어 콤보 |
+| | AbortController + fetch timeout | 90s LLM / 60s 이미지 / 180s 업로드 + 사용자 취소 |
 | | marked.js | 마크다운 → HTML 변환 |
 | | `@excalidraw/mermaid-to-excalidraw` | mermaid → Excalidraw skeleton |
 | | `@excalidraw/excalidraw` | SVG/Canvas 렌더링 |
 | | Gaegu (Google Fonts) | 한글 손글씨 폰트 |
 | **백엔드** | Python 3.11 `http.server` | 경량 정적 파일 + 프록시 |
+| | **ThreadingHTTPServer** | 요청별 스레드 — 이미지 3장 병렬 업로드 블로킹 차단 |
+| | Imgur 서버측 7회 재시도 | 누적 ~2분 백오프 (502/500 자동 회복) |
 | | refresh_token flow | Blogger OAuth2 자동 갱신 |
 | | DuckDuckGo HTML 스크래핑 | 주제 조사 1차 (무료, 무인증) |
-| | Perplexity Sonar | 주제 조사 2차 fallback + Phase 3b 팩트체크 (내장 웹 검색) |
-| | ThreadingHTTPServer | 요청별 스레드 — 이미지 병렬 업로드 블로킹 차단 |
-| **LLM** | BizRouter | OpenAI 호환 LLM 게이트웨이 |
-| | Gemini 2.5 Flash Lite | 검증 · 평가 · 팩트체크 (저지연 · 결정론) |
-| | Gemini 2.5 Flash | 설계 · 작성 (심층 추론 + 창의성) |
-| | `google_search` tool | 팩트체크 |
+| **LLM / AI** | BizRouter | OpenAI 호환 LLM 게이트웨이 |
+| | Gemini 2.5 Flash | 비유설계 · 글작성 (심층 추론) |
+| | Gemini 2.5 Flash Lite | 검증 · 평가 · 이미지프롬프트 (저지연 · 결정론) |
+| | **Perplexity Sonar** | Phase 1 fallback + Phase 3b 팩트체크 (내장 웹 검색) |
+| | **Nano Banana** (`gemini-2.5-flash-image`) | intro/middle/outro 이미지 생성 (7회 재시도) |
 | **인프라** | Railway | 배포 (Docker + 환경변수) |
 | | Docker | 컨테이너화 |
 | | Playwright | E2E 스크립트 자동 테스트 |
