@@ -75,11 +75,41 @@ class Pipeline {
 		if (this._cancelled) throw new Error("사용자가 취소했습니다");
 	}
 
+	// 비유와 토픽이 같은 단어를 공유하는지 체크 (중복 시 비유의 가치가 사라짐)
+	// 예: topic="Overhaul" + phrase="엔진 오버홀" → 중복 ("오버홀" 한글 표기 매칭)
+	static _phraseOverlapsTopic(phrase, topic) {
+		if (!phrase || !topic) return false;
+		const norm = (s) => s.toLowerCase().replace(/[\s\-—_,.]/g, "");
+		const np = norm(phrase);
+		const nt = norm(topic);
+		if (!np || !nt) return false;
+		// 토픽 전체가 비유 안에 포함되거나 그 반대
+		if (np.includes(nt) || nt.includes(np)) return true;
+		// 토픽의 3자 이상 substring이 비유 안에 있으면 중복으로 간주
+		for (let i = 0; i + 3 <= nt.length; i++) {
+			if (np.includes(nt.substring(i, i + 3))) return true;
+		}
+		return false;
+	}
+
 	// 블로그 제목 합성 + 명사구 추출 + 길이 하드컷.
-	// LLM이 confirmed_analogy에 문장 전체를 넣는 케이스 방어.
-	static _buildTitle(analogy, topic) {
+	// title_phrase 우선 사용 (Agent ① 출력) → 없거나 토픽 중복이면 confirmed_analogy fallback.
+	static _buildTitle(analogyOrDesign, topic) {
 		const safeTopic = (topic || "기술 블로그").substring(0, 30);
-		let s = (analogy || "비유").trim().replace(/\s+/g, " ");
+		// 호환: design 객체 전체가 들어오면 title_phrase 우선, 아니면 그대로 문자열 사용
+		let raw;
+		if (analogyOrDesign && typeof analogyOrDesign === "object") {
+			const tp = analogyOrDesign.title_phrase;
+			const ca = analogyOrDesign.confirmed_analogy;
+			// title_phrase가 있고 토픽과 중복 안 되면 채택
+			if (tp && tp.length >= 4 && tp.length <= 20 && !Pipeline._phraseOverlapsTopic(tp, topic)) {
+				return `${tp} — ${safeTopic}`;
+			}
+			raw = ca || tp || "비유";
+		} else {
+			raw = analogyOrDesign || "비유";
+		}
+		let s = raw.trim().replace(/\s+/g, " ");
 		// 1) 문장 종결부에서 자름
 		s = s.split(/[.!?。]/)[0].trim();
 		// 2) 종결 어미만 잘라냄. 시간절/처럼/같은 등은 자르지 않음 (의미 손실 위험).
@@ -416,10 +446,18 @@ ${researchContext || "조사 결과 없음 — 모델 지식으로 진행"}
 - "정보 부족", "확인할 수 없습니다" 같은 거부 응답 금지. 컨텍스트 패킷에 모든 정보가 있다.
 - 사전 지식으로 임의의 기술 용어(OpenCL 등)로 대체 금지. topic 필드의 명칭을 그대로 사용하라.
 - fitness_score는 최소 7점 이상이 되도록 구조 매핑을 충실히 작성하라.
-- confirmed_analogy는 **30자 이내의 짧은 명사구** (예: "아파트 통합 보안 시스템"). 문장이나 설명 금지. 블로그 제목으로 쓰임.
+- confirmed_analogy는 **30자 이내의 짧은 명사구** (예: "아파트 통합 보안 시스템"). 문장이나 설명 금지.
+- title_phrase는 **블로그 제목용 6~14자 비유 명사구**. confirmed_analogy를 더 짧게 압축. 다음 규칙 절대 준수:
+  1. **topic 단어/번역어/유사 표현 사용 금지** — 비유의 본질이 깨짐.
+     예: topic="Overhaul" → ❌"엔진 오버홀" ❌"Overhaul 정비" ✅"엔진 분해 재조립"
+     예: topic="리플로우" → ❌"가구 리플로우" ✅"가구 재배치"
+     예: topic="API 게이트웨이" → ❌"API 우체국" ✅"우체국 분류실"
+  2. 명사로 끝나기 (동사/형용사로 끝나면 안 됨). 조사 ~의/~을/~는 금지.
+  3. "~하는 시스템", "~하는 과정" 같은 관형절 금지. 핵심 명사구만.
+  4. 6자 미만 또는 14자 초과 금지.
 - worldview는 별도 필드로 300자 이내 세계관 설명.
 
-중요: 모든 출력(confirmed_analogy, worldview, structure_mapping 등)은 반드시 한국어로 작성하라.`,
+중요: 모든 출력(confirmed_analogy, title_phrase, worldview, structure_mapping 등)은 반드시 한국어로 작성하라.`,
 			userMessages,
 			{
 				model: Config.WRITER_MODEL,
@@ -429,6 +467,7 @@ ${researchContext || "조사 결과 없음 — 모델 지식으로 진행"}
 					type: "object",
 					properties: {
 						confirmed_analogy: { type: "string" },
+						title_phrase: { type: "string" },
 						worldview: { type: "string" },
 						structure_mapping: {
 							type: "array",
@@ -458,6 +497,7 @@ ${researchContext || "조사 결과 없음 — 모델 지식으로 진행"}
 					},
 					required: [
 						"confirmed_analogy",
+						"title_phrase",
 						"worldview",
 						"structure_mapping",
 						"counterexample_tests",
@@ -1074,7 +1114,7 @@ E1 비유 명확성(30%), E2 기술 깊이(25%), E3 가독성(20%), E4 흡인력
 				}
 				const htmlContent = BlogAssembler.markdownToHtml(bodyMd);
 				const title = Pipeline._buildTitle(
-					this.results.design?.confirmed_analogy,
+					this.results.design,
 					this.results.contextPacket?.topic,
 				);
 				const isDraft = publishMode === "draft";
