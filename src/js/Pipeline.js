@@ -75,6 +75,173 @@ class Pipeline {
 		if (this._cancelled) throw new Error("사용자가 취소했습니다");
 	}
 
+	// 영문 topic의 한글 음역(transliteration) 후보 생성. R2 보강.
+	// 예: "Overhaul" → ["오버홀", "오버홀의", "오버홀에"], "Reflow" → ["리플로우", "리플로우의"]
+	static _topicTransliterations(topic) {
+		if (!topic || typeof topic !== "string") return [];
+		const map = {
+			"overhaul": ["오버홀"],
+			"reflow": ["리플로우"],
+			"api": ["에이피아이"],
+			"queue": ["큐"],
+			"cache": ["캐시"],
+			"session": ["세션"],
+			"token": ["토큰"],
+			"webhook": ["웹훅"],
+			"oauth": ["오어스", "오스"],
+			"jwt": ["제이더블유티"],
+			"docker": ["도커"],
+			"kubernetes": ["쿠버네티스"],
+			"redis": ["레디스"],
+			"mongodb": ["몽고디비"],
+			"graphql": ["그래프큐엘"],
+			"https": ["에이치티티피에스"],
+			"http": ["에이치티티피"],
+		};
+		const lowered = topic.toLowerCase().replace(/[^a-z]/g, "");
+		const result = [];
+		for (const key of Object.keys(map)) {
+			if (lowered.includes(key)) {
+				for (const v of map[key]) result.push(v);
+			}
+		}
+		return result;
+	}
+
+	// 결정론적 룰 필터 R1~R7: title_phrase 후보의 어색함을 자동 차단.
+	// 반환: { ok: boolean, score: number, reasons: string[] }
+	// 이 함수는 룰 기반 평가만. LLM-as-Judge는 별도 호출.
+	static _scoreTitlePhrase(phrase, topic) {
+		const reasons = [];
+		let score = 100;
+		if (!phrase || typeof phrase !== "string") return { ok: false, score: 0, reasons: ["빈 문자열"] };
+		const p = phrase.trim();
+		// R1: 길이 6~14자
+		if (p.length < 6) { score -= 100; reasons.push(`R1: 너무 짧음(${p.length}자)`); }
+		else if (p.length > 14) { score -= 30; reasons.push(`R1: 너무 김(${p.length}자)`); }
+		// R2: topic 단어/한글 substring/음역 중복
+		if (Pipeline._phraseOverlapsTopic(p, topic)) {
+			score -= 60;
+			reasons.push("R2: topic과 중복");
+		} else {
+			// R2-b: 영문 topic의 한글 음역 매칭 (Overhaul ↔ 오버홀)
+			const trs = Pipeline._topicTransliterations(topic);
+			for (const tr of trs) {
+				if (p.includes(tr)) {
+					score -= 60;
+					reasons.push(`R2: topic 음역 '${tr}' 포함`);
+					break;
+				}
+			}
+		}
+		// R3: 동사/어미/조사 종결 금지
+		// "X기" 단음절 명사형은 너무 일반적이라 광범위 차단(-40), 단 자주 쓰이는 자연 명사(-15만)는 완화.
+		const strongBadEndings = [
+			/하다$/, /한다$/, /합니다$/, /된다$/, /됩니다$/,
+			/이다$/, /입니다$/, /있다$/, /없다$/,
+			/하기$/, /되기$/,
+			/까지$/, /부터$/,
+			/의$/, /을$/, /를$/, /는$/, /이$/, /가$/, /와$/, /과$/,
+			/요$/, /지$/, /게$/,
+		];
+		for (const re of strongBadEndings) {
+			if (re.test(p)) { score -= 40; reasons.push(`R3: 어미/조사 종결 (${re})`); break; }
+		}
+		// 약한 R3: ~기 (어색하지만 가끔 자연스러움 — "굽기/달리기/만들기")
+		// 단, "X기"가 명사로 자주 쓰이는 단어가 아니면 -10 패널티
+		const naturalNounsEndingInGi = ["굽기", "달리기", "만들기", "쓰기", "읽기", "듣기", "보기", "회복기"];
+		if (/[가-힣]기$/.test(p) && !naturalNounsEndingInGi.some((w) => p.endsWith(w))) {
+			score -= 10;
+			reasons.push("R3: 일반 '기' 종결");
+		}
+		// R4: 일반 추상어 종결 (대부분의 비유에서 어색)
+		// "조립"은 정비/기계 비유에선 자연스러우니 컨텍스트 보너스로 패널티 면제.
+		const abstractEndings = {
+			"조립": 35,
+			"처리": 20,
+			"시스템": 15,
+			"방식": 15,
+			"프로세스": 20,
+			"과정": 10,
+			"방법": 10,
+			"기술": 10,
+		};
+		const mechanicalContext = /엔진|기계|모터|머신|로봇|차량|자동차|기관/;
+		for (const [ending, penalty] of Object.entries(abstractEndings)) {
+			if (p.endsWith(ending)) {
+				// "조립"은 mechanical 컨텍스트면 패널티 면제 (예: "엔진 분해 재조립" OK)
+				if (ending === "조립" && mechanicalContext.test(p)) {
+					reasons.push(`R4: '조립' 컨텍스트 OK (mechanical)`);
+				} else {
+					score -= penalty;
+					reasons.push(`R4: 추상어 '${ending}' 종결 (-${penalty})`);
+				}
+				break;
+			}
+		}
+		// R5: 직역체 / 어색한 동사+명사 결합 ("X를 Y" 명사구)
+		if (/[가-힣]+을\s*[가-힣]+$/.test(p) || /[가-힣]+를\s*[가-힣]+$/.test(p)) {
+			score -= 35;
+			reasons.push("R5: 'X를 Y' 어색 패턴");
+		}
+		// R6: ~의 ~ 같은 형식적 명사 결합 (1회는 OK, 2회는 어색)
+		const uiCount = (p.match(/의\s/g) || []).length;
+		if (uiCount >= 2) { score -= 35; reasons.push("R6: ~의~ 2회 이상"); }
+		// R7: "굽다" 비유에 "조립" 같은 직역 의미 충돌 — 행위 명사 부조화
+		// 빵/요리/베이킹 → 굽기/만들기/반죽 / 조립/제작 안 어울림
+		const bakingNouns = /빵|반죽|오븐|쿠키|케이크/;
+		if (bakingNouns.test(p) && /(조립|제작|건설|건축)/.test(p)) {
+			score -= 30;
+			reasons.push("R7: 베이킹+조립 직역체");
+		}
+		// 임계: 70점 이상이어야 통과 (이전 50 → 70 상향)
+		const ok = score >= 70;
+		return { ok, score, reasons };
+	}
+
+	// LLM-as-Judge: 5개 후보 중 가장 자연스러운 1개 선택.
+	// Sonar 또는 Lite 모델로 호출. 호출 실패 시 룰 기반 최고점 폴백.
+	static async _judgeTitlePhrase(candidates, topic) {
+		try {
+			const result = await ApiClient.callAgent(
+				`당신은 한국어 자연스러움 판정 전문가입니다. 5개의 비유 명사구 후보 중 가장 자연스러운 1개를 선택합니다.
+
+판정 기준:
+1. 한국어 어순/표현이 자연스러운가
+2. 명사구로 깔끔하게 끝나는가
+3. 직역체/추상어가 아닌가
+4. 일반인이 들었을 때 어색하지 않은가
+
+출력: 0~4 사이 인덱스 정수 (선택한 후보의 위치)`,
+				[
+					`topic: ${topic}\n\n후보:\n${candidates.map((c, i) => `${i}. ${c}`).join("\n")}`,
+				],
+				{
+					model: Config.WRITER_MODEL,
+					thinking_budget: 1024,
+					temperature: 0.0,
+					schema_name: "title_judge",
+					response_schema: {
+						type: "object",
+						properties: {
+							best_index: { type: "integer" },
+							reason: { type: "string" },
+						},
+						required: ["best_index", "reason"],
+					},
+				},
+			);
+			const idx = result?.data?.best_index;
+			if (typeof idx === "number" && idx >= 0 && idx < candidates.length) {
+				console.log(`[L4 Judge] 선택: [${idx}] "${candidates[idx]}" — ${result.data.reason}`);
+				return idx;
+			}
+		} catch (e) {
+			console.warn("[L4 Judge] 실패, 룰 점수 fallback:", e.message);
+		}
+		return -1;
+	}
+
 	// 비유와 토픽이 같은 단어를 공유하는지 체크 (중복 시 비유의 가치가 사라짐)
 	// 예: topic="Overhaul" + phrase="엔진 오버홀" → 중복 ("오버홀" 한글 표기 매칭)
 	static _phraseOverlapsTopic(phrase, topic) {
@@ -92,24 +259,54 @@ class Pipeline {
 		return false;
 	}
 
-	// 블로그 제목 합성 + 명사구 추출 + 길이 하드컷.
-	// title_phrase 우선 사용 (Agent ① 출력) → 없거나 토픽 중복이면 confirmed_analogy fallback.
-	static _buildTitle(analogyOrDesign, topic) {
+	// 다층 방어 제목 합성 (L1~L4):
+	//   L1: Agent ① 프롬프트 강화로 후보 품질 ↑
+	//   L2: title_phrase_candidates 5개 수집
+	//   L3: 결정론적 룰 R1~R6로 점수화 + 차단
+	//   L4: LLM-as-Judge로 최종 1개 선택
+	//   L5: UI 거부권은 _showOpenModal 등에서 별도 처리
+	// 비동기 함수. 실패 시 confirmed_analogy fallback (구 _buildTitleSync 경로).
+	static async _buildTitleAsync(design, topic) {
 		const safeTopic = (topic || "기술 블로그").substring(0, 30);
-		// 호환: design 객체 전체가 들어오면 title_phrase 우선, 아니면 그대로 문자열 사용
-		let raw;
-		if (analogyOrDesign && typeof analogyOrDesign === "object") {
-			const tp = analogyOrDesign.title_phrase;
-			const ca = analogyOrDesign.confirmed_analogy;
-			// title_phrase가 있고 토픽과 중복 안 되면 채택
-			if (tp && tp.length >= 4 && tp.length <= 20 && !Pipeline._phraseOverlapsTopic(tp, topic)) {
-				return `${tp} — ${safeTopic}`;
-			}
-			raw = ca || tp || "비유";
-		} else {
-			raw = analogyOrDesign || "비유";
+		const candidates = (design && Array.isArray(design.title_phrase_candidates))
+			? design.title_phrase_candidates.filter((c) => typeof c === "string" && c.trim().length >= 4)
+			: [];
+
+		if (candidates.length === 0) {
+			console.warn("[L2] title_phrase_candidates 비어있음 — confirmed_analogy fallback");
+			return Pipeline._buildTitleSync(design?.confirmed_analogy || "비유", topic);
 		}
-		let s = raw.trim().replace(/\s+/g, " ");
+
+		// L3: 룰 기반 점수화. 각 후보 점수 + 통과 여부 계산.
+		const scored = candidates.map((c) => ({
+			phrase: c.trim(),
+			...Pipeline._scoreTitlePhrase(c.trim(), topic),
+		}));
+		console.log("[L3 룰 점수]", scored.map((x) => `"${x.phrase}"=${x.score}${x.ok ? "" : "(차단)"} [${x.reasons.join(", ")}]`).join(" / "));
+
+		const passed = scored.filter((x) => x.ok);
+		// 모두 차단되면 가장 점수 높은 거라도 사용 (사용자에겐 fallback 안내)
+		const pool = passed.length > 0 ? passed : scored.sort((a, b) => b.score - a.score).slice(0, 1);
+
+		// L4: LLM-as-Judge — pool 후보 중 가장 자연스러운 1개 선택.
+		let chosen = pool[0];
+		if (pool.length >= 2) {
+			const judgeIdx = await Pipeline._judgeTitlePhrase(pool.map((x) => x.phrase), topic);
+			if (judgeIdx >= 0 && judgeIdx < pool.length) chosen = pool[judgeIdx];
+			else {
+				// Judge 실패 시 룰 점수 최고
+				pool.sort((a, b) => b.score - a.score);
+				chosen = pool[0];
+			}
+		}
+		console.log(`[최종 선택] "${chosen.phrase}" (점수 ${chosen.score})`);
+		return `${chosen.phrase} — ${safeTopic}`;
+	}
+
+	// 호환용 동기 fallback. confirmed_analogy 또는 문자열을 받아 명사구 추출 + 하드컷.
+	static _buildTitleSync(rawText, topic) {
+		const safeTopic = (topic || "기술 블로그").substring(0, 30);
+		let s = (rawText || "비유").trim().replace(/\s+/g, " ");
 		// 1) 문장 종결부에서 자름
 		s = s.split(/[.!?。]/)[0].trim();
 		// 2) 종결 어미만 잘라냄. 시간절/처럼/같은 등은 자르지 않음 (의미 손실 위험).
@@ -447,14 +644,30 @@ ${researchContext || "조사 결과 없음 — 모델 지식으로 진행"}
 - 사전 지식으로 임의의 기술 용어(OpenCL 등)로 대체 금지. topic 필드의 명칭을 그대로 사용하라.
 - fitness_score는 최소 7점 이상이 되도록 구조 매핑을 충실히 작성하라.
 - confirmed_analogy는 **30자 이내의 짧은 명사구** (예: "아파트 통합 보안 시스템"). 문장이나 설명 금지.
-- title_phrase는 **블로그 제목용 6~14자 비유 명사구**. confirmed_analogy를 더 짧게 압축. 다음 규칙 절대 준수:
+- title_phrase_candidates는 **블로그 제목용 비유 명사구 후보 5개 (string 배열)**. 각각 6~14자. 시스템이 룰 검증과 LLM 판정으로 가장 자연스러운 1개를 선택한다.
+  ## 5개 후보 다양성 규칙
+  - 후보 1: 핵심 사물/장비명 (예: 빵 굽는 오븐, 자동차 엔진)
+  - 후보 2: 핵심 행위명 (예: 빵 굽기, 엔진 분해 재조립)
+  - 후보 3: 장소/공간명 (예: 베이커리 주방, 정비소 작업장)
+  - 후보 4: 사람/역할명 (예: 베이커, 정비사)
+  - 후보 5: 상태 변화/과정명 (예: 반죽에서 빵으로, 엔진 회복기)
+
+  ## 절대 준수 규칙 (각 후보가 모두 만족해야 함)
   1. **topic 단어/번역어/유사 표현 사용 금지** — 비유의 본질이 깨짐.
      예: topic="Overhaul" → ❌"엔진 오버홀" ❌"Overhaul 정비" ✅"엔진 분해 재조립"
-     예: topic="리플로우" → ❌"가구 리플로우" ✅"가구 재배치"
+     예: topic="Reflow" → ❌"리플로우 오븐" ✅"빵 굽는 오븐"
      예: topic="API 게이트웨이" → ❌"API 우체국" ✅"우체국 분류실"
-  2. 명사로 끝나기 (동사/형용사로 끝나면 안 됨). 조사 ~의/~을/~는 금지.
-  3. "~하는 시스템", "~하는 과정" 같은 관형절 금지. 핵심 명사구만.
-  4. 6자 미만 또는 14자 초과 금지.
+  2. **자연스러운 한국어 어순**. 일반 추상어/직역체 금지:
+     ❌ "빵 조립" (빵은 굽는 거지 조립 안 함)
+     ❌ "데이터 처리 시스템" (너무 일반적)
+     ❌ "엔진의 부활" (~의 조사 금지)
+     ✅ "빵 굽는 오븐", "엔진 분해 재조립"
+  3. **명사 종결**. 동사/형용사/어미 종결 금지:
+     ❌ "빵을 굽는다" (동사 종결)
+     ❌ "엔진을 분해하기" (어미 종결)
+     ✅ "빵 굽기" (명사형 어미), "엔진 분해" (순수 명사)
+  4. **금지 종결어**: ~조립(빵/책 등에 부적합), ~처리(추상), ~시스템(추상), ~방식(추상), ~프로세스(추상). 단 비유에 정말 자연스러운 경우만 허용.
+  5. 글자 수: 6자 이상 14자 이하. 공백 포함.
 - worldview는 별도 필드로 300자 이내 세계관 설명.
 
 중요: 모든 출력(confirmed_analogy, title_phrase, worldview, structure_mapping 등)은 반드시 한국어로 작성하라.`,
@@ -467,7 +680,12 @@ ${researchContext || "조사 결과 없음 — 모델 지식으로 진행"}
 					type: "object",
 					properties: {
 						confirmed_analogy: { type: "string" },
-						title_phrase: { type: "string" },
+						title_phrase_candidates: {
+							type: "array",
+							items: { type: "string" },
+							minItems: 5,
+							maxItems: 5,
+						},
 						worldview: { type: "string" },
 						structure_mapping: {
 							type: "array",
@@ -497,7 +715,7 @@ ${researchContext || "조사 결과 없음 — 모델 지식으로 진행"}
 					},
 					required: [
 						"confirmed_analogy",
-						"title_phrase",
+						"title_phrase_candidates",
 						"worldview",
 						"structure_mapping",
 						"counterexample_tests",
@@ -1113,7 +1331,7 @@ E1 비유 명확성(30%), E2 기술 깊이(25%), E3 가독성(20%), E4 흡인력
 					console.warn("mermaid 변환 실패, 원본 사용:", e.message);
 				}
 				const htmlContent = BlogAssembler.markdownToHtml(bodyMd);
-				const title = Pipeline._buildTitle(
+				const title = await Pipeline._buildTitleAsync(
 					this.results.design,
 					this.results.contextPacket?.topic,
 				);
