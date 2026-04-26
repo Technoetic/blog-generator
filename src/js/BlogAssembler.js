@@ -363,10 +363,28 @@ class BlogAssembler {
 		// 인라인 <code>: 순한글/한글+공백+기호만 들어 있으면 단순 라벨로 보고 본문 폰트 + 옅은 배경만 적용.
 		// 진짜 코드(영문/숫자/특수문자 포함)는 모노스페이스 유지.
 		// pre 내부 code는 건드리지 않기 위해 lookbehind로 제외.
+		// 분류 기준: "진짜 코드 신호"(연산자/식별자 호출/특수 기호) vs "라벨"(한글 또는 영문 일반어).
+		// 진짜 코드 신호: $/(/) /[]/ /=>/ /==/ /!=/ /=/연속/ /\.\w+\(/ /\(\)/ /;$/ /->/ 등
 		html = html.replace(/<code(\s[^>]*)?>([^<]*)<\/code>/g, (match, attrs, inner) => {
 			if (match.includes("style=")) return match;
-			const isHangulLabel = /^[\sㄱ-ㆎ가-힣·,./?!()\-—…]+$/.test(inner) && /[가-힣]/.test(inner);
-			const style = isHangulLabel
+			const hasHangul = /[가-힣]/.test(inner);
+			// 진짜 코드 신호 감지 — 위 신호가 1개라도 있으면 코드로 판정
+			const codeSignals = [
+				/[{};=<>!]/,        // 중괄호/세미콜론/대입/비교
+				/\(\)/,              // 함수 호출 ()
+				/\.\w+\(/,           // .method(
+				/=>|->|::/,          // 화살표/스코프
+				/[$@#%&^*]/,         // jQuery $, decorator @, hashtag #
+				/^\w+\([^)]*\)$/,    // 단일 호출 foo(bar)
+				/[a-z][A-Z]/,        // camelCase (fadeIn, getElementById)
+				/\bvar\b|\bconst\b|\blet\b|\bfunction\b|\breturn\b/,
+				/\d+(\.\d+)?(px|em|rem|%|ms|s)\b/, // CSS 단위
+				/\/[a-z]/,           // 경로 또는 정규식
+			];
+			const looksLikeCode = codeSignals.some((re) => re.test(inner));
+			// 한글이 포함되었지만 코드 신호가 없으면 → 한국어 라벨 (혼합어 포함)
+			const isLabel = hasHangul && !looksLikeCode;
+			const style = isLabel
 				? "background:#f1f3f5;color:#495057;padding:1px 6px;border-radius:4px;font-family:inherit;font-weight:600;"
 				: "font-family:'Consolas','Monaco',monospace,'Malgun Gothic','Apple SD Gothic Neo','Noto Sans KR',sans-serif;";
 			return `<code${attrs || ""} style="${style}">${inner}</code>`;
