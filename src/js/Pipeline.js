@@ -222,7 +222,8 @@ class Pipeline {
 					`topic: ${topic}\n\n후보:\n${candidates.map((c, i) => `${i}. ${c}`).join("\n")}`,
 				],
 				{
-					model: Config.WRITER_MODEL,
+					// Claude Haiku 4.5: 자기검증 편향 제거 + 한국어 자연성 평가에 강함.
+					model: "anthropic/claude-haiku-4-5",
 					thinking_budget: 1024,
 					temperature: 0.0,
 					schema_name: "title_judge",
@@ -1103,7 +1104,9 @@ A1: fitness_score 7이상, A2: mapping 완전성, A3: 반례 3개이상, A4: 세
 	// Phase 3a: 검증 + 재시도
 	async _phase3a(tone) {
 		const phase3aPrompt = `당신은 품질 검증 전문가입니다. 4단계 검증(조사→측정→근거→판정). 수정 제안 금지.
-B1~B12 검증. 톤: ${tone}. B2: 비유 용어는 기술 용어 아님. B4: 동의어 허용. B6: ±20% 허용.
+B1~B13 검증. 톤: ${tone}. B2: 비유 용어는 기술 용어 아님. B4: 동의어 허용. B6: ±20% 허용.
+B13(title_phrase 자연성): design.title_phrase_candidates의 5개 후보 중 어색한 한국어가 1개라도 있으면 FAIL.
+어색 기준: (a) 동사+명사 직역체 (예: "빵을 조립", "데이터를 처리") (b) topic 음역 포함 (Overhaul→오버홀, Reflow→리플로우 등) (c) ~의 ~ 2회 이상 (d) 일반 추상어 종결("시스템/방식/프로세스") (e) 6자 미만 또는 14자 초과.
 모든 항목에 inspect/measure/evidence 필수.`;
 		const phase3aSchema = {
 			type: "object",
