@@ -82,28 +82,32 @@ class Pipeline {
 		let s = (analogy || "비유").trim().replace(/\s+/g, " ");
 		// 1) 문장 종결부에서 자름
 		s = s.split(/[.!?。]/)[0].trim();
-		// 2) 한국어 종결 어미/연결 어미 패턴에서 자름 (명사구만 추출)
+		// 2) 종결 어미만 잘라냄. 시간절/처럼/같은 등은 자르지 않음 (의미 손실 위험).
+		//    어차피 20자 하드컷에서 단어 경계로 자연스럽게 자르게 됨.
 		const cutPatterns = [
-			/처럼\s.*$/,
-			/같은\s.*$/,
-			/같이\s.*$/,
-			/와\s같은.*$/,
-			/하는\s시스템.*$/,
-			/하는\s방식.*$/,
-			/하는\s것.*$/,
 			/입니다.*$/,
-			/이다.*$/,
+			/이다\s*$/,
 			/에요.*$/,
 			/예요.*$/,
+			/하다\s*$/,
 		];
 		for (const pat of cutPatterns) {
 			const m = s.match(pat);
-			if (m) s = s.substring(0, m.index).trim();
+			if (m && m.index >= 4) s = s.substring(0, m.index).trim();
 		}
 		// 3) 콤마/세미콜론 앞에서도 자름 (긴 부연설명 차단)
 		s = s.split(/[,;]/)[0].trim();
-		// 4) 20자 하드컷
-		if (s.length > 20) s = s.substring(0, 18) + "…";
+		// 4) 20자 하드컷 — 단어 경계(공백) 우선, 음절 중간 절단 방지
+		if (s.length > 20) {
+			const lastSpace = s.lastIndexOf(" ", 18);
+			if (lastSpace >= 8) {
+				// 8~18자 사이 공백이 있으면 그 위치에서 자름 (자연스러운 명사구 유지)
+				s = s.substring(0, lastSpace) + "…";
+			} else {
+				// 공백이 너무 앞이면 그냥 18자에서 절단
+				s = s.substring(0, 18) + "…";
+			}
+		}
 		if (s.length < 2) s = "비유";
 		return `${s} — ${safeTopic}`;
 	}
