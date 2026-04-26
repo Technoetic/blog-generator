@@ -120,11 +120,20 @@ class PipelineUI {
 
 	// 재시도 발생 시각화: phase-icon에 ↻ 아이콘 + shake/pulse, 행 우측에 RETRY 토스트, sub-status 강조
 	// 게이지도 0%로 리셋 후 재시작 (이전 사이클의 100%/95% 상태 정리)
+	// 일부 phase(예: phase2b)는 timed() 종료 후 검증 단계에서 재시도가 발생해 row가 'done' 상태로 잡혀 있음.
+	// 이 경우 row 클래스를 강제로 running으로 되돌리고, 전체 진행도도 재계산해 100%로 튀는 현상 방지.
 	static markRetry(phaseId, attempt, maxAttempts, reason) {
 		const row = document.getElementById(phaseId);
 		if (!row) return;
-		// 게이지 0%로 리셋 후 running 애니메이션 재시작
+		// 1) row 클래스를 'phase running'으로 강제 복귀 (done/fail 상태 제거)
+		row.className = "phase running";
+		// 2) 게이지 0%로 리셋 후 running 애니메이션 재시작
 		PipelineUI._updateGauge(phaseId, "running");
+		// 3) phase-time 텍스트도 임시 숨김 (재시도 끝나면 timed가 갱신 안 하므로 직전 측정값 유지하지 말고 비워둠)
+		const timeEl = document.getElementById(`${phaseId}-time`);
+		if (timeEl) timeEl.textContent = "";
+		// 4) 전체 진행도 재계산 (이번 phase가 done이 아니므로 overall % 감소)
+		PipelineUI.updateOverallProgress();
 		const icon = row.querySelector(".phase-icon");
 		if (icon) {
 			icon.classList.remove("retry-shake");
