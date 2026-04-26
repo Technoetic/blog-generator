@@ -332,6 +332,15 @@ class PipelineUI {
 
 	static showResults(results) {
 		document.getElementById("resultPanel").className = "result-panel active";
+		// 제목 표시 + 사용자 거부권 버튼
+		if (results.title) {
+			const tb = document.getElementById("titleBar");
+			const tt = document.getElementById("titleText");
+			if (tb && tt) {
+				tt.textContent = results.title;
+				tb.style.display = "flex";
+			}
+		}
 		document.getElementById("blogPreview").innerHTML =
 			BlogAssembler.markdownToHtml(results.assembled || "");
 		document.getElementById("designReport").textContent = JSON.stringify(

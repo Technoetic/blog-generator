@@ -39,6 +39,11 @@ class Pipeline {
 			await this._phase3b();
 			await this._phase3c(ratio);
 			await this._phase4();
+			// 제목 미리 생성 (UI 거부권 노출용). _phase5에서 재사용.
+			this.results.title = await Pipeline._buildTitleAsync(
+				this.results.design,
+				this.results.contextPacket?.topic,
+			);
 			await this._phase5(publishMode);
 
 			PipelineUI.showCost(
@@ -259,34 +264,58 @@ class Pipeline {
 		return false;
 	}
 
-	// 다층 방어 제목 합성 (L1~L4):
+	// 다층 방어 제목 합성 (L1~L5):
 	//   L1: Agent ① 프롬프트 강화로 후보 품질 ↑
 	//   L2: title_phrase_candidates 5개 수집
-	//   L3: 결정론적 룰 R1~R6로 점수화 + 차단
+	//   L3: 결정론적 룰 R1~R7로 점수화 + 차단
 	//   L4: LLM-as-Judge로 최종 1개 선택
-	//   L5: UI 거부권은 _showOpenModal 등에서 별도 처리
-	// 비동기 함수. 실패 시 confirmed_analogy fallback (구 _buildTitleSync 경로).
-	static async _buildTitleAsync(design, topic) {
+	//   L5: 통과 후보 부족 시 N=4회 추가 재생성 (누적 후보풀)
+	//   L6: UI 거부권은 결과 패널의 "🔄 제목 다시 생성" 버튼 (별도 메서드)
+	// 비동기 함수. 모든 layer 실패 시 confirmed_analogy fallback.
+	static async _buildTitleAsync(design, topic, options = {}) {
 		const safeTopic = (topic || "기술 블로그").substring(0, 30);
-		const candidates = (design && Array.isArray(design.title_phrase_candidates))
-			? design.title_phrase_candidates.filter((c) => typeof c === "string" && c.trim().length >= 4)
-			: [];
+		const maxRegens = options.maxRegens ?? 4; // 0이면 재생성 안 함, 4면 5회까지(초기 1 + 추가 4)
 
-		if (candidates.length === 0) {
-			console.warn("[L2] title_phrase_candidates 비어있음 — confirmed_analogy fallback");
+		// L2: 초기 후보 수집
+		let cumulativePool = [];
+		const seen = new Set();
+		const harvest = (rawCandidates) => {
+			if (!Array.isArray(rawCandidates)) return;
+			for (const c of rawCandidates) {
+				if (typeof c !== "string") continue;
+				const trimmed = c.trim();
+				if (trimmed.length < 4 || seen.has(trimmed)) continue;
+				seen.add(trimmed);
+				const scored = { phrase: trimmed, ...Pipeline._scoreTitlePhrase(trimmed, topic) };
+				cumulativePool.push(scored);
+			}
+		};
+
+		harvest(design?.title_phrase_candidates);
+
+		// L5: 통과 후보 부족 시 추가 재생성
+		for (let regen = 0; regen < maxRegens; regen++) {
+			const passed = cumulativePool.filter((x) => x.ok);
+			if (passed.length >= 2) break; // 통과 후보 2개 이상이면 충분
+			console.log(`[L5 재생성 ${regen + 1}/${maxRegens}] 통과 후보 ${passed.length}개 — 추가 호출`);
+			try {
+				const more = await Pipeline._regenerateTitlePhraseCandidates(design, topic, cumulativePool.map((x) => x.phrase));
+				harvest(more);
+			} catch (e) {
+				console.warn(`[L5 재생성 실패] ${e.message}`);
+				break;
+			}
+		}
+
+		console.log("[L3 누적 룰 점수]", cumulativePool.map((x) => `"${x.phrase}"=${x.score}${x.ok ? "" : "(차단)"}`).join(" / "));
+
+		if (cumulativePool.length === 0) {
+			console.warn("[L2/L5 모두 실패] confirmed_analogy fallback");
 			return Pipeline._buildTitleSync(design?.confirmed_analogy || "비유", topic);
 		}
 
-		// L3: 룰 기반 점수화. 각 후보 점수 + 통과 여부 계산.
-		const scored = candidates.map((c) => ({
-			phrase: c.trim(),
-			...Pipeline._scoreTitlePhrase(c.trim(), topic),
-		}));
-		console.log("[L3 룰 점수]", scored.map((x) => `"${x.phrase}"=${x.score}${x.ok ? "" : "(차단)"} [${x.reasons.join(", ")}]`).join(" / "));
-
-		const passed = scored.filter((x) => x.ok);
-		// 모두 차단되면 가장 점수 높은 거라도 사용 (사용자에겐 fallback 안내)
-		const pool = passed.length > 0 ? passed : scored.sort((a, b) => b.score - a.score).slice(0, 1);
+		const passed = cumulativePool.filter((x) => x.ok);
+		const pool = passed.length > 0 ? passed : cumulativePool.sort((a, b) => b.score - a.score).slice(0, 3);
 
 		// L4: LLM-as-Judge — pool 후보 중 가장 자연스러운 1개 선택.
 		let chosen = pool[0];
@@ -294,13 +323,91 @@ class Pipeline {
 			const judgeIdx = await Pipeline._judgeTitlePhrase(pool.map((x) => x.phrase), topic);
 			if (judgeIdx >= 0 && judgeIdx < pool.length) chosen = pool[judgeIdx];
 			else {
-				// Judge 실패 시 룰 점수 최고
 				pool.sort((a, b) => b.score - a.score);
 				chosen = pool[0];
 			}
 		}
 		console.log(`[최종 선택] "${chosen.phrase}" (점수 ${chosen.score})`);
+		// 사용자 거부권 UI를 위해 누적 풀 보존
+		Pipeline._lastTitleState = {
+			cumulativePool,
+			topic,
+			design,
+			chosen: chosen.phrase,
+		};
 		return `${chosen.phrase} — ${safeTopic}`;
+	}
+
+	// L5 보조: Agent ①을 추가 호출해 차단된 후보를 회피한 새 후보 5개 생성.
+	static async _regenerateTitlePhraseCandidates(design, topic, alreadyTried) {
+		const result = await ApiClient.callAgent(
+			`당신은 비유 제목 명사구 생성 전문가입니다. 주제와 비유 세계관을 받아 자연스러운 한국어 비유 명사구 5개를 생성합니다.
+
+🚨 절대 규칙:
+1. 이미 시도된 후보(아래 alreadyTried 목록)와 다른 새로운 5개를 생성하라.
+2. topic 단어/번역어/음역 사용 금지. 비유의 본질이 깨짐.
+3. 명사로 끝나기 (동사/어미/조사 종결 금지).
+4. 6~14자 명사구.
+5. "X를 Y" 직역체 금지. "빵 조립" 같은 어색한 동사+명사 조합 금지.
+6. 한국어로 자연스럽게 들리는 표현만.
+
+다양성: 사물명/행위명/장소명/사람명/상태명을 골고루 섞어라.`,
+			[
+				JSON.stringify({ topic, confirmed_analogy: design?.confirmed_analogy, worldview: design?.worldview }),
+				`alreadyTried: ${JSON.stringify(alreadyTried)}`,
+			],
+			{
+				model: Config.WRITER_MODEL,
+				thinking_budget: 1024,
+				temperature: 0.9, // 다양성 위해 약간 높임
+				schema_name: "title_regen",
+				response_schema: {
+					type: "object",
+					properties: {
+						new_candidates: {
+							type: "array",
+							items: { type: "string" },
+							minItems: 5,
+							maxItems: 5,
+						},
+					},
+					required: ["new_candidates"],
+				},
+			},
+		);
+		return result?.data?.new_candidates || [];
+	}
+
+	// L6 사용자 거부권: 결과 패널에서 호출. 차단되지 않은 다른 후보 중 다음 점수의 것 사용.
+	// pool에 다른 후보가 없으면 Agent ① 재호출.
+	static async regenerateTitle() {
+		const state = Pipeline._lastTitleState;
+		if (!state) return null;
+		const { cumulativePool, topic, design, chosen } = state;
+		// 현재 선택을 제외한 풀
+		const remaining = cumulativePool.filter((x) => x.phrase !== chosen);
+		if (remaining.length > 0) {
+			// 통과한 것 우선, 없으면 점수 최고
+			const passed = remaining.filter((x) => x.ok);
+			const next = (passed.length > 0 ? passed : remaining).sort((a, b) => b.score - a.score)[0];
+			Pipeline._lastTitleState.chosen = next.phrase;
+			console.log(`[L6 재생성] "${chosen}" → "${next.phrase}"`);
+			return `${next.phrase} — ${(topic || "").substring(0, 30)}`;
+		}
+		// 풀 소진 → Agent ① 재호출
+		console.log("[L6 재생성] 풀 소진 — Agent ① 재호출");
+		const more = await Pipeline._regenerateTitlePhraseCandidates(design, topic, cumulativePool.map((x) => x.phrase));
+		for (const c of more) {
+			const trimmed = (c || "").trim();
+			if (trimmed.length < 4) continue;
+			const scored = { phrase: trimmed, ...Pipeline._scoreTitlePhrase(trimmed, topic) };
+			cumulativePool.push(scored);
+		}
+		const newPassed = cumulativePool.filter((x) => x.ok && x.phrase !== chosen);
+		if (newPassed.length === 0) return null;
+		const next = newPassed.sort((a, b) => b.score - a.score)[0];
+		Pipeline._lastTitleState.chosen = next.phrase;
+		return `${next.phrase} — ${(topic || "").substring(0, 30)}`;
 	}
 
 	// 호환용 동기 fallback. confirmed_analogy 또는 문자열을 받아 명사구 추출 + 하드컷.
@@ -1331,7 +1438,8 @@ E1 비유 명확성(30%), E2 기술 깊이(25%), E3 가독성(20%), E4 흡인력
 					console.warn("mermaid 변환 실패, 원본 사용:", e.message);
 				}
 				const htmlContent = BlogAssembler.markdownToHtml(bodyMd);
-				const title = await Pipeline._buildTitleAsync(
+				// 제목은 _run()에서 미리 생성. 사용자 거부권 행사 시 results.title이 갱신됨.
+				const title = this.results.title || await Pipeline._buildTitleAsync(
 					this.results.design,
 					this.results.contextPacket?.topic,
 				);
