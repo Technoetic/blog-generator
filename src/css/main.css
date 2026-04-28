@@ -55,6 +55,18 @@ body {
 .jarvis-toggle:active {
 	transform: translateY(0);
 }
+.jarvis-toggle.bgm-toggle-btn {
+	right: 110px; /* SFX 토글 옆 */
+	color: #a78bfa;
+	border-color: rgba(167, 139, 250, 0.45);
+	text-shadow: 0 0 8px rgba(167, 139, 250, 0.5);
+	box-shadow: 0 0 12px rgba(167, 139, 250, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+	background: linear-gradient(135deg, rgba(167, 139, 250, 0.18), rgba(34, 211, 238, 0.18));
+}
+.jarvis-toggle.bgm-toggle-btn:hover {
+	background: linear-gradient(135deg, rgba(167, 139, 250, 0.3), rgba(34, 211, 238, 0.3));
+	box-shadow: 0 4px 16px rgba(167, 139, 250, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
 
 h1 {
 	font-size: 28px;

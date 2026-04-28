@@ -57,16 +57,26 @@ document.getElementById("topic").addEventListener("keydown", (e) => {
 function toggleJarvis() {
 	JarvisFX.toggle();
 }
+function toggleBgm() {
+	JarvisFX.toggleBgm();
+}
 
 // 초기 토글 버튼 상태 반영 + 음성 목록 미리 로드
 (function initJarvis() {
-	const btn = document.getElementById("jarvisToggle");
-	if (btn) {
-		btn.textContent = JarvisFX._enabled ? "🔊 SFX ON" : "🔇 SFX OFF";
-	}
+	const sfxBtn = document.getElementById("jarvisToggle");
+	if (sfxBtn) sfxBtn.textContent = JarvisFX._enabled ? "🔊 SFX ON" : "🔇 SFX OFF";
+	const bgmBtn = document.getElementById("bgmToggle");
+	if (bgmBtn) bgmBtn.textContent = JarvisFX._bgmEnabled ? "🎵 BGM ON" : "🎶 BGM OFF";
 	// Web Speech voices 비동기 로드 트리거
 	if (window.speechSynthesis) {
 		speechSynthesis.getVoices();
-		speechSynthesis.addEventListener("voiceschanged", () => speechSynthesis.getVoices());
+		speechSynthesis.addEventListener("voiceschanged", () => {
+			speechSynthesis.getVoices();
+			JarvisFX._voiceAvailable = null; // 캐시 리셋
+			// 영어 보이스 없으면 콘솔 안내
+			if (!JarvisFX.hasEnglishMaleVoice()) {
+				console.warn("[JARVIS] No English voice available. SFX only mode.");
+			}
+		});
 	}
 })();

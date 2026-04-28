@@ -1,14 +1,25 @@
 // PipelineUI.js — Phase 상태 관리, 비용 표시, 탭 전환, 결과 표시
 
-// JARVIS 사이버 보이스 + 트랜스포머 메탈릭 SFX (Web Audio API + Web Speech API)
+// JARVIS 사이버 보이스 + 트랜스포머 메탈릭 SFX + 사이버 앰비언트 BGM
 class JarvisFX {
 	static _ctx = null;
 	static _enabled = (typeof localStorage !== "undefined") && localStorage.getItem("jarvisFxEnabled") !== "false";
-	static _voiceCache = null;
+	static _bgmEnabled = (typeof localStorage !== "undefined") && localStorage.getItem("jarvisBgmEnabled") !== "false";
+	static _bgmNodes = null; // 활성 BGM 노드들 (정지용)
+	static _voiceAvailable = null; // 영어 보이스 존재 여부 캐시
 
 	static get ctx() {
 		if (!JarvisFX._ctx) JarvisFX._ctx = new (window.AudioContext || window.webkitAudioContext)();
 		return JarvisFX._ctx;
+	}
+
+	// 영어 남성 보이스 존재 확인. 없으면 voice() 호출 자체를 차단 (한국 보이스로 영어 읽는 것 방지)
+	static hasEnglishMaleVoice() {
+		if (JarvisFX._voiceAvailable !== null) return JarvisFX._voiceAvailable;
+		const voices = (window.speechSynthesis?.getVoices() || []);
+		const englishOnly = voices.filter((v) => /^en[-_]/i.test(v.lang));
+		JarvisFX._voiceAvailable = englishOnly.length > 0;
+		return JarvisFX._voiceAvailable;
 	}
 
 	static toggle() {
@@ -17,7 +28,126 @@ class JarvisFX {
 		const btn = document.getElementById("jarvisToggle");
 		if (btn) btn.textContent = JarvisFX._enabled ? "🔊 SFX ON" : "🔇 SFX OFF";
 		if (JarvisFX._enabled) JarvisFX.bassDrop();
+		else JarvisFX.stopBgm();
 		return JarvisFX._enabled;
+	}
+
+	static toggleBgm() {
+		JarvisFX._bgmEnabled = !JarvisFX._bgmEnabled;
+		localStorage.setItem("jarvisBgmEnabled", JarvisFX._bgmEnabled);
+		const btn = document.getElementById("bgmToggle");
+		if (btn) btn.textContent = JarvisFX._bgmEnabled ? "🎵 BGM ON" : "🎶 BGM OFF";
+		if (JarvisFX._bgmEnabled) JarvisFX.startBgm();
+		else JarvisFX.stopBgm();
+		return JarvisFX._bgmEnabled;
+	}
+
+	// 사이버 앰비언트 BGM: 4-layer drone + pad + pulse + filtered noise
+	// 매우 작은 음량 (-30dB)으로 백그라운드 분위기만
+	static startBgm() {
+		if (!JarvisFX._enabled || !JarvisFX._bgmEnabled) return;
+		if (JarvisFX._bgmNodes) return; // 이미 재생 중
+		const ctx = JarvisFX.ctx;
+		const t = ctx.currentTime;
+		const master = ctx.createGain();
+		master.gain.value = 0.18; // 전체 BGM 마스터 볼륨 (잔잔하게)
+		master.connect(ctx.destination);
+
+		// 1) Sub-bass drone — 40Hz + 41Hz beat (slow phase shift)
+		const drone1 = ctx.createOscillator();
+		drone1.type = "sine";
+		drone1.frequency.value = 40;
+		const drone2 = ctx.createOscillator();
+		drone2.type = "sine";
+		drone2.frequency.value = 41;
+		const droneGain = ctx.createGain();
+		droneGain.gain.value = 0.7;
+		drone1.connect(droneGain);
+		drone2.connect(droneGain);
+		droneGain.connect(master);
+		drone1.start(t);
+		drone2.start(t);
+
+		// 2) Pad layer — 200Hz triangle, LFO modulated
+		const pad = ctx.createOscillator();
+		pad.type = "triangle";
+		pad.frequency.value = 200;
+		const padGain = ctx.createGain();
+		padGain.gain.value = 0.0;
+		// LFO: 0.15Hz로 천천히 fade in/out
+		const lfo = ctx.createOscillator();
+		lfo.type = "sine";
+		lfo.frequency.value = 0.15;
+		const lfoGain = ctx.createGain();
+		lfoGain.gain.value = 0.05;
+		lfo.connect(lfoGain).connect(padGain.gain);
+		// 기본 게인 0.05 + LFO modulation
+		padGain.gain.value = 0.05;
+		pad.connect(padGain).connect(master);
+		pad.start(t);
+		lfo.start(t);
+
+		// 3) High pad — 600Hz triangle, octave 위 (분위기 톤)
+		const highPad = ctx.createOscillator();
+		highPad.type = "sine";
+		highPad.frequency.value = 600;
+		const highPadGain = ctx.createGain();
+		highPadGain.gain.value = 0.025;
+		highPad.connect(highPadGain).connect(master);
+		highPad.start(t);
+
+		// 4) Filtered noise (공기감, atmospheric)
+		const buf = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
+		const data = buf.getChannelData(0);
+		for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+		const noise = ctx.createBufferSource();
+		noise.buffer = buf;
+		noise.loop = true;
+		const noiseFilter = ctx.createBiquadFilter();
+		noiseFilter.type = "lowpass";
+		noiseFilter.frequency.value = 200;
+		const noiseGain = ctx.createGain();
+		noiseGain.gain.value = 0.05;
+		noise.connect(noiseFilter).connect(noiseGain).connect(master);
+		noise.start(t);
+
+		// 5) 주기적 시스템 ping (5초마다 880Hz square 짧게 — 시스템 동작감)
+		const pingInterval = setInterval(() => {
+			if (!JarvisFX._bgmNodes) return;
+			const pt = ctx.currentTime;
+			const ping = ctx.createOscillator();
+			ping.type = "sine";
+			ping.frequency.value = 1200;
+			const pingGain = ctx.createGain();
+			pingGain.gain.setValueAtTime(0.001, pt);
+			pingGain.gain.exponentialRampToValueAtTime(0.04, pt + 0.02);
+			pingGain.gain.exponentialRampToValueAtTime(0.001, pt + 0.15);
+			ping.connect(pingGain).connect(master);
+			ping.start(pt);
+			ping.stop(pt + 0.16);
+		}, 5000);
+
+		// fade in 2초
+		master.gain.setValueAtTime(0.001, t);
+		master.gain.exponentialRampToValueAtTime(0.18, t + 2.0);
+
+		JarvisFX._bgmNodes = { drone1, drone2, pad, lfo, highPad, noise, master, pingInterval };
+	}
+
+	static stopBgm() {
+		if (!JarvisFX._bgmNodes) return;
+		const { drone1, drone2, pad, lfo, highPad, noise, master, pingInterval } = JarvisFX._bgmNodes;
+		const ctx = JarvisFX.ctx;
+		const t = ctx.currentTime;
+		// fade out 1.5초
+		master.gain.cancelScheduledValues(t);
+		master.gain.setValueAtTime(master.gain.value, t);
+		master.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
+		setTimeout(() => {
+			try { drone1.stop(); drone2.stop(); pad.stop(); lfo.stop(); highPad.stop(); noise.stop(); } catch (e) {}
+		}, 1600);
+		clearInterval(pingInterval);
+		JarvisFX._bgmNodes = null;
 	}
 
 	// 메탈릭 transform 사운드 (트랜스포머 변신음)
@@ -173,37 +303,46 @@ class JarvisFX {
 		});
 	}
 
-	// JARVIS 보이스: 영국 남성 / 깊은 톤
+	// JARVIS 보이스: 영어 남성 강제 / 깊은 robotic 톤
+	// 영어 보이스 없으면 한국 보이스로 영어 읽지 않고 그냥 SFX만 재생 (한국식 영어 발음 방지)
 	static voice(text, opts = {}) {
 		if (!JarvisFX._enabled) return;
 		if (!window.speechSynthesis) return;
-		const u = new SpeechSynthesisUtterance(text);
-		u.lang = "en-GB";
-		u.rate = opts.rate || 0.95;
-		u.pitch = opts.pitch || 0.85;
-		u.volume = opts.volume || 0.8;
 		const voices = speechSynthesis.getVoices();
-		const preferred = voices.find((v) => /Daniel/i.test(v.name)) // macOS 영국 남성
-			|| voices.find((v) => /Microsoft Mark|Microsoft Guy|Microsoft David/i.test(v.name))
-			|| voices.find((v) => /Google.*UK.*Male/i.test(v.name))
-			|| voices.find((v) => v.lang === "en-GB")
-			|| voices.find((v) => v.lang === "en-US");
-		if (preferred) u.voice = preferred;
+		// 영어 보이스만 필터링
+		const englishOnly = voices.filter((v) => /^en[-_]/i.test(v.lang));
+		if (englishOnly.length === 0) {
+			console.warn("[JARVIS] No English voice installed — voice skipped");
+			return;
+		}
+		// 우선순위: macOS Daniel > Windows 남성 > UK > US 일반
+		const preferred = englishOnly.find((v) => /Daniel/i.test(v.name))
+			|| englishOnly.find((v) => /Microsoft Mark|Microsoft Guy|Microsoft David|Microsoft Ryan/i.test(v.name))
+			|| englishOnly.find((v) => /Alex|James|Oliver|Arthur/i.test(v.name))
+			|| englishOnly.find((v) => /Male/i.test(v.name))
+			|| englishOnly.find((v) => /UK|GB/i.test(v.lang))
+			|| englishOnly[0];
+		const u = new SpeechSynthesisUtterance(text);
+		u.voice = preferred;
+		u.lang = preferred.lang || "en-US";
+		u.rate = opts.rate || 0.88;   // 천천히 (권위감)
+		u.pitch = opts.pitch || 0.7;  // 더 낮게 (robotic JARVIS 톤)
+		u.volume = opts.volume || 0.85;
 		speechSynthesis.cancel();
 		speechSynthesis.speak(u);
 	}
 }
 
-// Phase별 JARVIS 보이스 라인
+// Phase별 JARVIS 보이스 라인 (짧고 또렷하게 — TTS 발음 정확도 ↑)
 const JARVIS_LINES = {
-	phase1:  { running: "Scanning topic. Cross-referencing.",       done: "Topic acquired, sir." },
-	phase2a: { running: "Forging analogy structure.",                done: "Analogy forged." },
-	phase2b: { running: "Parallel agents engaged.",                  done: "Composition complete." },
-	phase3a: { running: "Validating output.",                        done: "Validation passed." },
-	phase3b: { running: "Cross-checking facts.",                     done: "Facts verified." },
-	phase3c: { running: "Rendering visuals.",                        done: "Visuals deployed." },
-	phase4:  { running: "Quality assessment in progress.",           done: "All systems nominal." },
-	phase5:  { running: "Deploying to Blogger.",                     done: "Mission complete, sir." },
+	phase1:  { running: "Scanning topic.",       done: "Topic locked." },
+	phase2a: { running: "Forging analogy.",       done: "Analogy ready." },
+	phase2b: { running: "Parallel agents online.", done: "Composition complete." },
+	phase3a: { running: "Validating.",            done: "Validation passed." },
+	phase3b: { running: "Fact check.",            done: "Facts verified." },
+	phase3c: { running: "Rendering visuals.",     done: "Visuals deployed." },
+	phase4:  { running: "Quality scan.",          done: "All systems nominal." },
+	phase5:  { running: "Deploying.",             done: "Mission complete." },
 };
 
 class PipelineUI {
