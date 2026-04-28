@@ -1,13 +1,40 @@
 // ApiClient.js — BizRouter API, 이미지 생성, Imgur 업로드
 class ApiClient {
+	// AbortController 기반 timeout 헬퍼 — Nano Banana/LLM 응답 무한 대기 방지
+	static async _fetchWithTimeout(url, options, timeoutMs) {
+		const ctrl = new AbortController();
+		const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+		try {
+			return await fetch(url, { ...options, signal: ctrl.signal });
+		} catch (e) {
+			if (e.name === "AbortError") {
+				throw new Error(`요청 타임아웃 (${timeoutMs / 1000}초 초과)`);
+			}
+			throw e;
+		} finally {
+			clearTimeout(timer);
+		}
+	}
+
 	static async callAgent(systemPrompt, userMessages, options = {}) {
-		const messages = [
-			{ role: "system", content: systemPrompt },
-			...userMessages.map((m) => ({
-				role: "user",
-				content: typeof m === "string" ? m : JSON.stringify(m),
-			})),
-		];
+		// Perplexity Sonar 등 일부 모델은 user 메시지 연속 불허 (user/assistant 교대 규칙).
+		// 여러 user 메시지를 하나로 합침.
+		const model = options.model || Config.MODEL;
+		const strictAlternation = /perplexity\/|^sonar/i.test(model);
+		const messages = [{ role: "system", content: systemPrompt }];
+		if (strictAlternation && userMessages.length > 1) {
+			const combined = userMessages
+				.map((m, i) => `[Part ${i + 1}]\n${typeof m === "string" ? m : JSON.stringify(m)}`)
+				.join("\n\n");
+			messages.push({ role: "user", content: combined });
+		} else {
+			for (const m of userMessages) {
+				messages.push({
+					role: "user",
+					content: typeof m === "string" ? m : JSON.stringify(m),
+				});
+			}
+		}
 
 		const body = {
 			model: options.model || Config.MODEL,
@@ -35,14 +62,26 @@ class ApiClient {
 			body.tools = options.tools;
 		}
 
-		const res = await fetch(Config.BIZROUTER_URL, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				...AuthManager.getAuthHeaders(),
-			},
-			body: JSON.stringify(body),
-		});
+		// 503/429 등 일시 장애는 지수 백오프로 최대 3회 재시도. 단일 호출 90초 timeout.
+		let res;
+		let attempt = 0;
+		while (true) {
+			res = await ApiClient._fetchWithTimeout(Config.BIZROUTER_URL, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					...AuthManager.getAuthHeaders(),
+				},
+				body: JSON.stringify(body),
+			}, 90000);
+			if (res.ok) break;
+			const transient = res.status === 503 || res.status === 429 || res.status === 504;
+			if (!transient || attempt >= 3) break;
+			attempt++;
+			const wait = 2000 * Math.pow(2, attempt - 1); // 2s, 4s, 8s
+			console.warn(`API ${res.status}, ${wait}ms 후 재시도 (${attempt}/3)`);
+			await new Promise((r) => setTimeout(r, wait));
+		}
 
 		if (!res.ok) {
 			const err = await res.text();
@@ -80,12 +119,12 @@ class ApiClient {
 			parsed = content;
 		}
 
-		return { data: parsed, usage };
+		return { data: parsed, usage, finishReason };
 	}
 
 	static async generateImage(prompt, aspectRatio = "16:9") {
 		try {
-			const res = await fetch(Config.BIZROUTER_URL, {
+			const res = await ApiClient._fetchWithTimeout(Config.BIZROUTER_URL, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -104,44 +143,59 @@ class ApiClient {
 					aspect_ratio: aspectRatio,
 					stream: false,
 				}),
-			});
+			}, 60000); // Nano Banana 60초 timeout
 
 			if (!res.ok) {
 				console.warn("이미지 API 응답 오류:", res.status);
-				return null;
+				return { url: null, usage: {} };
 			}
 
 			const data = await res.json();
 			const content = data.choices?.[0]?.message?.content;
+			const usage = data.usage || {};
 
 			if (Array.isArray(content)) {
 				const img = content.find((c) => c.type === "image_url");
-				if (img) return img.image_url.url;
+				if (img) return { url: img.image_url.url, usage };
 			}
-			return null;
+			return { url: null, usage };
 		} catch (e) {
 			console.warn("이미지 생성 예외:", e.message);
-			return null;
+			return { url: null, usage: {} };
 		}
 	}
 
 	static async uploadToImgur(base64DataUrl) {
-		try {
-			const base64 = base64DataUrl.replace(/^data:image\/\w+;base64,/, "");
-			const res = await fetch(Config.IMGUR_PROXY_URL, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					...AuthManager.getAuthHeaders(),
-				},
-				body: JSON.stringify({ image: base64 }),
-			});
-			if (!res.ok) return null;
-			const data = await res.json();
-			return data.link || null;
-		} catch (e) {
-			console.warn("Imgur 업로드 실패:", e.message);
-			return null;
+		const base64 = base64DataUrl.replace(/^data:image\/\w+;base64,/, "");
+		// 서버에서 7회 재시도하므로 클라이언트는 1회만. 단일 호출 timeout 180초 (서버 누적 ~2분 + 여유).
+		const delays = [0];
+		let lastErr = null;
+		for (let i = 0; i < delays.length; i++) {
+			if (delays[i] > 0) await new Promise((r) => setTimeout(r, delays[i]));
+			try {
+				const res = await ApiClient._fetchWithTimeout(Config.IMGUR_PROXY_URL, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						...AuthManager.getAuthHeaders(),
+					},
+					body: JSON.stringify({ image: base64 }),
+				}, 180000);
+				if (res.ok) {
+					const data = await res.json();
+					if (data.link) {
+						if (i > 0) console.log(`Imgur 업로드 ${i + 1}차 시도 성공`);
+						return data.link;
+					}
+					lastErr = "응답에 link 없음";
+				} else {
+					lastErr = `HTTP ${res.status}`;
+				}
+			} catch (e) {
+				lastErr = e.message;
+			}
+			console.warn(`Imgur 업로드 실패 ${i + 1}/${delays.length}: ${lastErr}`);
 		}
+		throw new Error(`Imgur 업로드 4회 재시도 모두 실패: ${lastErr}`);
 	}
 }
