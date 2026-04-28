@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>비유 블로그 생성기</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" integrity="sha384-948ahk4ZmxYVYOc+rxN1H2gM1EJ2Duhp7uHtZ4WSLkV4Vtx5MUqnV+l7u9B+jFv+" crossorigin="anonymous"></script>
   <link rel="stylesheet" href="css/main.css">
 </head>
@@ -88,72 +91,72 @@
         </div>
       </div>
       <div class="phase waiting" id="phase1">
-        <div class="phase-icon">1</div>
+        <div class="phase-icon">Ⅰ</div>
         <div class="phase-main">
-          <div class="phase-label">Phase 1 — 주제 분석 (DuckDuckGo → Sonar fallback)</div>
+          <div class="phase-label">Ⅰ. 주제 분석 (DuckDuckGo → Sonar fallback)</div>
           <div class="phase-substatus" id="phase1-sub"></div>
         </div>
         <div class="phase-gauge"><div class="phase-gauge-fill" id="phase1-gauge"></div><span class="phase-gauge-pct" id="phase1-pct">0%</span></div>
         <div class="phase-time" id="phase1-time"></div>
       </div>
       <div class="phase waiting" id="phase2a">
-        <div class="phase-icon">2a</div>
+        <div class="phase-icon">Ⅱ</div>
         <div class="phase-main">
-          <div class="phase-label">Phase 2a — Agent ① 비유설계 (최대 3회 재시도) → Agent ④ 검증</div>
+          <div class="phase-label">Ⅱ. 비유 설계 (최대 3회 재시도 + 검증)</div>
           <div class="phase-substatus" id="phase2a-sub"></div>
         </div>
         <div class="phase-gauge"><div class="phase-gauge-fill" id="phase2a-gauge"></div><span class="phase-gauge-pct" id="phase2a-pct">0%</span></div>
         <div class="phase-time" id="phase2a-time"></div>
       </div>
       <div class="phase waiting" id="phase2b">
-        <div class="phase-icon">2b</div>
+        <div class="phase-icon">Ⅲ</div>
         <div class="phase-main">
-          <div class="phase-label">Phase 2b — Agent ②③ 글작성+이미지프롬프트 (병렬, 5게이트 검증)</div>
+          <div class="phase-label">Ⅲ. 글 작성 + 이미지 프롬프트 (병렬, 5게이트 검증)</div>
           <div class="phase-substatus" id="phase2b-sub"></div>
         </div>
         <div class="phase-gauge"><div class="phase-gauge-fill" id="phase2b-gauge"></div><span class="phase-gauge-pct" id="phase2b-pct">0%</span></div>
         <div class="phase-time" id="phase2b-time"></div>
       </div>
       <div class="phase waiting" id="phase3a">
-        <div class="phase-icon">3a</div>
+        <div class="phase-icon">Ⅳ</div>
         <div class="phase-main">
-          <div class="phase-label">Phase 3a — Agent ④ 검증 B (테이블/다이어그램/헤딩)</div>
+          <div class="phase-label">Ⅳ. 본문 검증 (테이블/다이어그램/헤딩 14항목)</div>
           <div class="phase-substatus" id="phase3a-sub"></div>
         </div>
         <div class="phase-gauge"><div class="phase-gauge-fill" id="phase3a-gauge"></div><span class="phase-gauge-pct" id="phase3a-pct">0%</span></div>
         <div class="phase-time" id="phase3a-time"></div>
       </div>
       <div class="phase waiting" id="phase3b">
-        <div class="phase-icon">3b</div>
+        <div class="phase-icon">Ⅴ</div>
         <div class="phase-main">
-          <div class="phase-label">Phase 3b — Agent ⑥ 팩트체크 (Perplexity Sonar 웹 검색)</div>
+          <div class="phase-label">Ⅴ. 팩트체크 (Perplexity Sonar 실시간 웹 검색)</div>
           <div class="phase-substatus" id="phase3b-sub"></div>
         </div>
         <div class="phase-gauge"><div class="phase-gauge-fill" id="phase3b-gauge"></div><span class="phase-gauge-pct" id="phase3b-pct">0%</span></div>
         <div class="phase-time" id="phase3b-time"></div>
       </div>
       <div class="phase waiting" id="phase3c">
-        <div class="phase-icon">3c</div>
+        <div class="phase-icon">Ⅵ</div>
         <div class="phase-main">
-          <div class="phase-label">Phase 3c — Nano Banana 이미지 (7회 재시도) + mermaid→Excalidraw</div>
+          <div class="phase-label">Ⅵ. 이미지 생성 (Nano Banana 7회 재시도 + 손그림 다이어그램)</div>
           <div class="phase-substatus" id="phase3c-sub"></div>
         </div>
         <div class="phase-gauge"><div class="phase-gauge-fill" id="phase3c-gauge"></div><span class="phase-gauge-pct" id="phase3c-pct">0%</span></div>
         <div class="phase-time" id="phase3c-time"></div>
       </div>
       <div class="phase waiting" id="phase4">
-        <div class="phase-icon">4</div>
+        <div class="phase-icon">Ⅶ</div>
         <div class="phase-main">
-          <div class="phase-label">Phase 4 — Agent ⑤ 품질 평가 (7 루브릭)</div>
+          <div class="phase-label">Ⅶ. 품질 평가 (7 루브릭)</div>
           <div class="phase-substatus" id="phase4-sub"></div>
         </div>
         <div class="phase-gauge"><div class="phase-gauge-fill" id="phase4-gauge"></div><span class="phase-gauge-pct" id="phase4-pct">0%</span></div>
         <div class="phase-time" id="phase4-time"></div>
       </div>
       <div class="phase waiting" id="phase5">
-        <div class="phase-icon">5</div>
+        <div class="phase-icon">Ⅷ</div>
         <div class="phase-main">
-          <div class="phase-label">Phase 5 — Blogger API 자동 발행</div>
+          <div class="phase-label">Ⅷ. 블로그 발행 (Blogger API)</div>
           <div class="phase-substatus" id="phase5-sub"></div>
         </div>
         <div class="phase-gauge"><div class="phase-gauge-fill" id="phase5-gauge"></div><span class="phase-gauge-pct" id="phase5-pct">0%</span></div>
