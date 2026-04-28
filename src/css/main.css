@@ -27,119 +27,184 @@ body {
 	position: relative;
 }
 
-/* 사이버 네온 토글 스위치 (SFX + BGM) */
+/* 묵직한 메탈 토글 스위치 (참고 이미지 스타일: 큼지막한 ON/OFF + 광택 메탈 노브) */
 .audio-toggles {
 	position: absolute;
 	top: 0;
 	right: 0;
 	display: flex;
-	gap: 12px;
+	gap: 14px;
 	z-index: 10;
 }
-.switch {
-	position: relative;
+.metal-switch {
 	display: inline-flex;
 	align-items: center;
 	gap: 8px;
-	padding: 6px 10px 6px 8px;
-	background: rgba(255, 255, 255, 0.04);
-	border: 1px solid rgba(255, 255, 255, 0.1);
-	border-radius: 999px;
 	cursor: pointer;
 	user-select: none;
-	font-family: 'Consolas', 'Monaco', monospace;
-	font-size: 0.75em;
-	font-weight: 700;
-	letter-spacing: 1px;
-	color: rgba(255, 255, 255, 0.6);
-	transition: all 0.25s;
 }
-.switch:hover {
-	background: rgba(255, 255, 255, 0.07);
-	border-color: rgba(255, 255, 255, 0.18);
-}
-.switch-icon {
-	font-size: 1.05em;
-	line-height: 1;
-}
-.switch-label {
-	min-width: 30px;
-	text-align: left;
-}
-.switch input[type="checkbox"] {
+.metal-switch input[type="checkbox"] {
 	display: none;
 }
-/* 토글 트랙 */
-.switch .slider {
-	position: relative;
-	width: 36px;
-	height: 18px;
-	background: rgba(255, 255, 255, 0.1);
-	border: 1px solid rgba(255, 255, 255, 0.15);
-	border-radius: 999px;
-	transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+.ms-icon {
+	font-size: 1.1em;
+	line-height: 1;
+	filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.5));
 }
-/* 토글 노브 */
-.switch .slider::before {
+
+/* 트랙 — 묵직한 다크 캡슐 + 깊은 inset 그림자 */
+.ms-track {
+	position: relative;
+	display: inline-block;
+	width: 78px;
+	height: 28px;
+	background: linear-gradient(180deg, #1a1d24 0%, #0d0f14 50%, #1a1d24 100%);
+	border-radius: 999px;
+	border: 1px solid rgba(0, 0, 0, 0.6);
+	box-shadow:
+		inset 0 2px 4px rgba(0, 0, 0, 0.7),
+		inset 0 -1px 2px rgba(255, 255, 255, 0.05),
+		0 1px 2px rgba(255, 255, 255, 0.06);
+	overflow: hidden;
+}
+
+/* ON / OFF 텍스트 — 트랙 안 큼지막하게 */
+.ms-text-on, .ms-text-off {
+	position: absolute;
+	top: 50%;
+	transform: translateY(-50%);
+	font-family: 'Inter', 'Segoe UI', sans-serif;
+	font-size: 11px;
+	font-weight: 900;
+	letter-spacing: 1px;
+	transition: all 0.3s ease;
+	pointer-events: none;
+	z-index: 1;
+}
+.ms-text-on {
+	right: 10px;
+	color: rgba(255, 255, 255, 0.25);
+}
+.ms-text-off {
+	left: 10px;
+	color: rgba(255, 255, 255, 0.6);
+	text-shadow: 0 1px 1px rgba(0, 0, 0, 0.8);
+}
+
+/* 노브 — 메탈 타원형 + 양옆 그루브 라인 */
+.ms-knob {
+	position: absolute;
+	top: 50%;
+	transform: translateY(-50%);
+	left: 2px;
+	width: 32px;
+	height: 22px;
+	border-radius: 999px;
+	transition: all 0.35s cubic-bezier(0.34, 1.4, 0.64, 1);
+	z-index: 2;
+}
+/* 그루브 라인 (양옆 짧은 세로선) */
+.ms-knob::before, .ms-knob::after {
 	content: "";
 	position: absolute;
 	top: 50%;
-	left: 2px;
 	transform: translateY(-50%);
-	width: 12px;
-	height: 12px;
-	background: rgba(255, 255, 255, 0.85);
-	border-radius: 50%;
-	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-	transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+	width: 2px;
+	height: 8px;
+	background: rgba(0, 0, 0, 0.35);
+	border-radius: 1px;
+	box-shadow: 1px 0 0 rgba(255, 255, 255, 0.15);
 }
-/* SFX (시안) ON 상태 */
-.switch.sfx-switch input:checked ~ .slider {
-	background: linear-gradient(135deg, rgba(34, 211, 238, 0.7), rgba(34, 211, 238, 0.4));
-	border-color: rgba(34, 211, 238, 0.6);
-	box-shadow: 0 0 12px rgba(34, 211, 238, 0.5), inset 0 0 6px rgba(34, 211, 238, 0.3);
+.ms-knob::before { left: 6px; }
+.ms-knob::after  { right: 6px; }
+
+/* OFF 상태: 노브 좌측 + 회색 메탈 */
+.metal-switch input:not(:checked) ~ .ms-track .ms-knob {
+	background: linear-gradient(180deg, #6b7280 0%, #4b5563 50%, #374151 100%);
+	box-shadow:
+		0 1px 0 rgba(255, 255, 255, 0.25) inset,
+		0 -1px 1px rgba(0, 0, 0, 0.4) inset,
+		0 2px 4px rgba(0, 0, 0, 0.5);
 }
-.switch.sfx-switch input:checked ~ .slider::before {
-	left: 21px;
-	background: #22d3ee;
-	box-shadow: 0 0 8px rgba(34, 211, 238, 0.8), 0 1px 3px rgba(0, 0, 0, 0.4);
+.metal-switch input:not(:checked) ~ .ms-track .ms-text-on {
+	opacity: 0.15;
 }
-.switch.sfx-switch input:checked ~ .switch-label,
-.switch.sfx-switch:has(input:checked) .switch-label {
-	color: #22d3ee;
-	text-shadow: 0 0 8px rgba(34, 211, 238, 0.5);
-}
-/* BGM (보라) ON 상태 */
-.switch.bgm-switch input:checked ~ .slider {
-	background: linear-gradient(135deg, rgba(167, 139, 250, 0.7), rgba(167, 139, 250, 0.4));
-	border-color: rgba(167, 139, 250, 0.6);
-	box-shadow: 0 0 12px rgba(167, 139, 250, 0.5), inset 0 0 6px rgba(167, 139, 250, 0.3);
-}
-.switch.bgm-switch input:checked ~ .slider::before {
-	left: 21px;
-	background: #a78bfa;
-	box-shadow: 0 0 8px rgba(167, 139, 250, 0.8), 0 1px 3px rgba(0, 0, 0, 0.4);
-}
-.switch.bgm-switch input:checked ~ .switch-label,
-.switch.bgm-switch:has(input:checked) .switch-label {
-	color: #a78bfa;
-	text-shadow: 0 0 8px rgba(167, 139, 250, 0.5);
+.metal-switch input:not(:checked) ~ .ms-track .ms-text-off {
+	opacity: 1;
 }
 
-/* 클릭 유도 펄스 — ON 상태일 때만 부드럽게 */
-@keyframes switch-pulse-cyan {
-	0%, 100% { box-shadow: 0 0 12px rgba(34, 211, 238, 0.4), inset 0 0 6px rgba(34, 211, 238, 0.3); }
-	50%      { box-shadow: 0 0 22px rgba(34, 211, 238, 0.8), inset 0 0 10px rgba(34, 211, 238, 0.4); }
+/* SFX (시안) ON 상태 */
+.metal-switch.sfx-switch input:checked ~ .ms-track .ms-knob {
+	left: 44px;
+	background: linear-gradient(180deg, #67e8f9 0%, #22d3ee 50%, #0891b2 100%);
+	box-shadow:
+		0 1px 0 rgba(255, 255, 255, 0.5) inset,
+		0 -1px 1px rgba(0, 0, 0, 0.3) inset,
+		0 2px 6px rgba(34, 211, 238, 0.6),
+		0 0 12px rgba(34, 211, 238, 0.5);
 }
-@keyframes switch-pulse-purple {
-	0%, 100% { box-shadow: 0 0 12px rgba(167, 139, 250, 0.4), inset 0 0 6px rgba(167, 139, 250, 0.3); }
-	50%      { box-shadow: 0 0 22px rgba(167, 139, 250, 0.8), inset 0 0 10px rgba(167, 139, 250, 0.4); }
+.metal-switch.sfx-switch input:checked ~ .ms-track {
+	background: linear-gradient(180deg, #0e3a44 0%, #082b33 50%, #0e3a44 100%);
+	box-shadow:
+		inset 0 2px 4px rgba(0, 0, 0, 0.7),
+		0 0 14px rgba(34, 211, 238, 0.4);
 }
-.switch.sfx-switch input:checked ~ .slider {
-	animation: switch-pulse-cyan 3s ease-in-out infinite;
+.metal-switch.sfx-switch input:checked ~ .ms-track .ms-text-on {
+	color: #22d3ee;
+	text-shadow: 0 0 8px rgba(34, 211, 238, 0.8);
+	opacity: 1;
 }
-.switch.bgm-switch input:checked ~ .slider {
-	animation: switch-pulse-purple 3s ease-in-out infinite;
+.metal-switch.sfx-switch input:checked ~ .ms-track .ms-text-off {
+	opacity: 0.15;
+}
+
+/* BGM (보라) ON 상태 */
+.metal-switch.bgm-switch input:checked ~ .ms-track .ms-knob {
+	left: 44px;
+	background: linear-gradient(180deg, #c4b5fd 0%, #a78bfa 50%, #7c3aed 100%);
+	box-shadow:
+		0 1px 0 rgba(255, 255, 255, 0.5) inset,
+		0 -1px 1px rgba(0, 0, 0, 0.3) inset,
+		0 2px 6px rgba(167, 139, 250, 0.6),
+		0 0 12px rgba(167, 139, 250, 0.5);
+}
+.metal-switch.bgm-switch input:checked ~ .ms-track {
+	background: linear-gradient(180deg, #2e1f4a 0%, #1f1535 50%, #2e1f4a 100%);
+	box-shadow:
+		inset 0 2px 4px rgba(0, 0, 0, 0.7),
+		0 0 14px rgba(167, 139, 250, 0.4);
+}
+.metal-switch.bgm-switch input:checked ~ .ms-track .ms-text-on {
+	color: #a78bfa;
+	text-shadow: 0 0 8px rgba(167, 139, 250, 0.8);
+	opacity: 1;
+}
+.metal-switch.bgm-switch input:checked ~ .ms-track .ms-text-off {
+	opacity: 0.15;
+}
+
+/* hover 시 살짝 강조 */
+.metal-switch:hover .ms-track {
+	filter: brightness(1.1);
+}
+.metal-switch:active .ms-knob {
+	transform: translateY(-50%) scale(0.95);
+}
+
+/* ON 상태 펄스 (트랙 외곽 글로우) */
+@keyframes ms-pulse-cyan {
+	0%, 100% { box-shadow: inset 0 2px 4px rgba(0,0,0,0.7), 0 0 14px rgba(34, 211, 238, 0.4); }
+	50%      { box-shadow: inset 0 2px 4px rgba(0,0,0,0.7), 0 0 22px rgba(34, 211, 238, 0.7); }
+}
+@keyframes ms-pulse-purple {
+	0%, 100% { box-shadow: inset 0 2px 4px rgba(0,0,0,0.7), 0 0 14px rgba(167, 139, 250, 0.4); }
+	50%      { box-shadow: inset 0 2px 4px rgba(0,0,0,0.7), 0 0 22px rgba(167, 139, 250, 0.7); }
+}
+.metal-switch.sfx-switch input:checked ~ .ms-track {
+	animation: ms-pulse-cyan 3s ease-in-out infinite;
+}
+.metal-switch.bgm-switch input:checked ~ .ms-track {
+	animation: ms-pulse-purple 3s ease-in-out infinite;
 }
 
 h1 {
