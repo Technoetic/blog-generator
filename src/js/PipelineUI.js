@@ -227,27 +227,34 @@ class JarvisFX {
 		const playBuf = (buf) => {
 			const src = ctx.createBufferSource();
 			src.buffer = buf;
-			src.playbackRate.value = opts.rate || 0.85; // 더 느리고 무겁게 (베이스 자연 강조)
+			src.playbackRate.value = opts.rate || 0.80; // 더 느리고 무겁게 (베이스 자연 강조 강화)
 
-			// 1) Highpass — 60Hz 이하만 컷 (sub-bass 살림)
+			// 1) Highpass — 50Hz 이하만 컷 (sub-bass 더 살림)
 			const hp = ctx.createBiquadFilter();
 			hp.type = "highpass";
-			hp.frequency.value = 60;
+			hp.frequency.value = 50;
 			hp.Q.value = 0.7;
 
-			// 2) Sub-bass shelf @ 80Hz +5dB — 가슴 울리는 저주파
+			// 2) Sub-bass shelf @ 80Hz +9dB — 가슴 울리는 저주파 강화 (이전 +5)
 			const subShelf = ctx.createBiquadFilter();
 			subShelf.type = "lowshelf";
 			subShelf.frequency.value = 80;
-			subShelf.gain.value = 5;
+			subShelf.gain.value = 9;
 
-			// 3) Low shelf @ 200Hz +8dB — 영화 내레이터 깊은 베이스 (이전 +3dB)
+			// 3) Low-mid peaking @ 150Hz +6dB Q0.8 — 흉성 (chest voice) 강조
+			const lowMid = ctx.createBiquadFilter();
+			lowMid.type = "peaking";
+			lowMid.frequency.value = 150;
+			lowMid.Q.value = 0.8;
+			lowMid.gain.value = 6;
+
+			// 4) Low shelf @ 250Hz +10dB — 영화 내레이터 깊은 베이스 (이전 +8 @ 200Hz)
 			const lowShelf = ctx.createBiquadFilter();
 			lowShelf.type = "lowshelf";
-			lowShelf.frequency.value = 200;
-			lowShelf.gain.value = 8;
+			lowShelf.frequency.value = 250;
+			lowShelf.gain.value = 10;
 
-			// 4) Peaking @ 3000Hz +2dB — presence 유지
+			// 5) Peaking @ 3000Hz +2dB — presence 유지
 			const peak = ctx.createBiquadFilter();
 			peak.type = "peaking";
 			peak.frequency.value = 3000;
@@ -268,16 +275,17 @@ class JarvisFX {
 			const wetGain = ctx.createGain();
 			wetGain.gain.value = 0.40;
 
-			// 8) Master gain — 베이스 부스트로 음량 약간 올라가니 0.50→0.55
+			// 8) Master gain — 음량 살짝 키움 (0.55 → 0.65)
 			const masterGain = ctx.createGain();
-			masterGain.gain.value = opts.volume || 0.55;
+			masterGain.gain.value = opts.volume || 0.65;
 
-			// 라우팅: src → HP → SubShelf → LowShelf → Peak
-			//                                          ├─ dry → master
-			//                                          └─ preDelay → Reverb → wet → master
+			// 라우팅: src → HP → SubShelf → LowMid → LowShelf → Peak
+			//                                                  ├─ dry → master
+			//                                                  └─ preDelay → Reverb → wet → master
 			src.connect(hp);
 			hp.connect(subShelf);
-			subShelf.connect(lowShelf);
+			subShelf.connect(lowMid);
+			lowMid.connect(lowShelf);
 			lowShelf.connect(peak);
 			peak.connect(dryGain);
 			dryGain.connect(masterGain);
