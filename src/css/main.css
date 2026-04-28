@@ -420,16 +420,16 @@ select option {
 }
 
 .phase-icon {
-	width: 28px;
+	width: 36px;          /* 4글자 VIII 수용 */
 	height: 28px;
 	border-radius: 8px;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	font-size: 16px;
+	font-size: 13px;
 	font-weight: 700;
-	font-family: 'Cinzel', 'Georgia', 'Times New Roman', serif; /* 영화 챕터 톤 세리프 */
-	letter-spacing: 0.5px;
+	font-family: 'Cinzel', 'Georgia', 'Times New Roman', serif;
+	letter-spacing: 0.8px;
 	flex-shrink: 0;
 }
 
