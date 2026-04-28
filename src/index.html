@@ -9,8 +9,20 @@
 </head>
 <body>
   <div class="container">
-    <button type="button" class="jarvis-toggle" id="jarvisToggle" onclick="toggleJarvis()" title="JARVIS SFX + Voice 토글">🔊 SFX ON</button>
-    <button type="button" class="jarvis-toggle bgm-toggle-btn" id="bgmToggle" onclick="toggleBgm()" title="Epic Cinematic BGM 토글">🎵 BGM ON</button>
+    <div class="audio-toggles">
+      <label class="switch sfx-switch" title="JARVIS SFX + Voice 토글">
+        <span class="switch-icon">🔊</span>
+        <span class="switch-label">SFX</span>
+        <input type="checkbox" id="jarvisToggle" onchange="toggleJarvis()" checked>
+        <span class="slider"></span>
+      </label>
+      <label class="switch bgm-switch" title="Epic Cinematic BGM 토글">
+        <span class="switch-icon">🎵</span>
+        <span class="switch-label">BGM</span>
+        <input type="checkbox" id="bgmToggle" onchange="toggleBgm()" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
     <!-- Epic cinematic BGM (Pixabay royalty-free, Hans Zimmer 스타일) -->
     <audio id="bgmAudio" preload="auto" loop>
       <source src="assets/bgm-epic-cinematic.mp3" type="audio/mpeg">

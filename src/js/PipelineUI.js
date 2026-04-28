@@ -22,11 +22,12 @@ class JarvisFX {
 		return JarvisFX._voiceAvailable;
 	}
 
+	// 호환용: 외부에서 직접 호출 시 사용. 스위치 UI는 app.js의 toggleJarvis/toggleBgm()이 처리.
 	static toggle() {
 		JarvisFX._enabled = !JarvisFX._enabled;
 		localStorage.setItem("jarvisFxEnabled", JarvisFX._enabled);
-		const btn = document.getElementById("jarvisToggle");
-		if (btn) btn.textContent = JarvisFX._enabled ? "🔊 SFX ON" : "🔇 SFX OFF";
+		const cb = document.getElementById("jarvisToggle");
+		if (cb) cb.checked = JarvisFX._enabled;
 		if (JarvisFX._enabled) JarvisFX.bassDrop();
 		else JarvisFX.stopBgm();
 		return JarvisFX._enabled;
@@ -35,8 +36,8 @@ class JarvisFX {
 	static toggleBgm() {
 		JarvisFX._bgmEnabled = !JarvisFX._bgmEnabled;
 		localStorage.setItem("jarvisBgmEnabled", JarvisFX._bgmEnabled);
-		const btn = document.getElementById("bgmToggle");
-		if (btn) btn.textContent = JarvisFX._bgmEnabled ? "🎵 BGM ON" : "🎶 BGM OFF";
+		const cb = document.getElementById("bgmToggle");
+		if (cb) cb.checked = JarvisFX._bgmEnabled;
 		if (JarvisFX._bgmEnabled) JarvisFX.startBgm();
 		else JarvisFX.stopBgm();
 		return JarvisFX._bgmEnabled;
