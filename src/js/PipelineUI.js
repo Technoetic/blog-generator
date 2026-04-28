@@ -248,9 +248,9 @@ class JarvisFX {
 			const wetGain = ctx.createGain();
 			wetGain.gain.value = 0.25;
 
-			// 6) Master gain
+			// 6) Master gain (BGM 0.30 대비 1.67배 — 자연스러운 보이스오버)
 			const masterGain = ctx.createGain();
-			masterGain.gain.value = opts.volume || 0.42;
+			masterGain.gain.value = opts.volume || 0.50;
 
 			// 라우팅
 			src.connect(hp);
