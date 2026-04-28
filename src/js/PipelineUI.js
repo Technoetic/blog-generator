@@ -1,4 +1,211 @@
 // PipelineUI.js — Phase 상태 관리, 비용 표시, 탭 전환, 결과 표시
+
+// JARVIS 사이버 보이스 + 트랜스포머 메탈릭 SFX (Web Audio API + Web Speech API)
+class JarvisFX {
+	static _ctx = null;
+	static _enabled = (typeof localStorage !== "undefined") && localStorage.getItem("jarvisFxEnabled") !== "false";
+	static _voiceCache = null;
+
+	static get ctx() {
+		if (!JarvisFX._ctx) JarvisFX._ctx = new (window.AudioContext || window.webkitAudioContext)();
+		return JarvisFX._ctx;
+	}
+
+	static toggle() {
+		JarvisFX._enabled = !JarvisFX._enabled;
+		localStorage.setItem("jarvisFxEnabled", JarvisFX._enabled);
+		const btn = document.getElementById("jarvisToggle");
+		if (btn) btn.textContent = JarvisFX._enabled ? "🔊 SFX ON" : "🔇 SFX OFF";
+		if (JarvisFX._enabled) JarvisFX.bassDrop();
+		return JarvisFX._enabled;
+	}
+
+	// 메탈릭 transform 사운드 (트랜스포머 변신음)
+	static transform() {
+		if (!JarvisFX._enabled) return;
+		const ctx = JarvisFX.ctx;
+		const t = ctx.currentTime;
+		// 1) 메탈 click — high-frequency white noise burst 50ms
+		const buf = ctx.createBuffer(1, ctx.sampleRate * 0.05, ctx.sampleRate);
+		const data = buf.getChannelData(0);
+		for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+		const noise = ctx.createBufferSource();
+		noise.buffer = buf;
+		const noiseGain = ctx.createGain();
+		noiseGain.gain.value = 0.15;
+		const noiseFilter = ctx.createBiquadFilter();
+		noiseFilter.type = "highpass";
+		noiseFilter.frequency.value = 2000;
+		noise.connect(noiseFilter).connect(noiseGain).connect(ctx.destination);
+		noise.start(t);
+		// 2) sawtooth pitch slide 80→400Hz (메탈 기어 회전)
+		const osc = ctx.createOscillator();
+		osc.type = "sawtooth";
+		osc.frequency.setValueAtTime(80, t);
+		osc.frequency.exponentialRampToValueAtTime(400, t + 0.3);
+		const og = ctx.createGain();
+		og.gain.setValueAtTime(0.001, t);
+		og.gain.exponentialRampToValueAtTime(0.18, t + 0.05);
+		og.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+		osc.connect(og).connect(ctx.destination);
+		osc.start(t);
+		osc.stop(t + 0.4);
+	}
+
+	// 베이스 드롭 (아이언맨 부팅음, sub-bass 60Hz + harmonics)
+	static bassDrop() {
+		if (!JarvisFX._enabled) return;
+		const ctx = JarvisFX.ctx;
+		const t = ctx.currentTime;
+		[60, 120, 180].forEach((f, i) => {
+			const osc = ctx.createOscillator();
+			osc.type = "sine";
+			osc.frequency.value = f;
+			const g = ctx.createGain();
+			g.gain.setValueAtTime(0.001, t);
+			g.gain.exponentialRampToValueAtTime(0.4 / (i + 1), t + 0.05);
+			g.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+			osc.connect(g).connect(ctx.destination);
+			osc.start(t);
+			osc.stop(t + 0.8);
+		});
+	}
+
+	// HUD 락온 (square wave triple beep)
+	static hudLock() {
+		if (!JarvisFX._enabled) return;
+		const ctx = JarvisFX.ctx;
+		const t0 = ctx.currentTime;
+		[0, 0.08, 0.16].forEach((d) => {
+			const t = t0 + d;
+			const osc = ctx.createOscillator();
+			osc.type = "square";
+			osc.frequency.value = 880;
+			const g = ctx.createGain();
+			g.gain.setValueAtTime(0.001, t);
+			g.gain.exponentialRampToValueAtTime(0.12, t + 0.01);
+			g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+			osc.connect(g).connect(ctx.destination);
+			osc.start(t);
+			osc.stop(t + 0.07);
+		});
+	}
+
+	// 알람 펄스 (재시도/실패 — 빨간 경보)
+	static alert() {
+		if (!JarvisFX._enabled) return;
+		const ctx = JarvisFX.ctx;
+		const t0 = ctx.currentTime;
+		[0, 0.15, 0.3].forEach((d) => {
+			const t = t0 + d;
+			const osc = ctx.createOscillator();
+			osc.type = "square";
+			osc.frequency.value = 660;
+			const g = ctx.createGain();
+			g.gain.setValueAtTime(0.001, t);
+			g.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
+			g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+			osc.connect(g).connect(ctx.destination);
+			osc.start(t);
+			osc.stop(t + 0.12);
+		});
+	}
+
+	// 서보 모터 (이미지/병렬 처리)
+	static servo() {
+		if (!JarvisFX._enabled) return;
+		const ctx = JarvisFX.ctx;
+		const t = ctx.currentTime;
+		const osc = ctx.createOscillator();
+		osc.type = "triangle";
+		osc.frequency.setValueAtTime(220, t);
+		osc.frequency.linearRampToValueAtTime(440, t + 0.15);
+		osc.frequency.linearRampToValueAtTime(220, t + 0.3);
+		const g = ctx.createGain();
+		g.gain.setValueAtTime(0.001, t);
+		g.gain.exponentialRampToValueAtTime(0.1, t + 0.05);
+		g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+		osc.connect(g).connect(ctx.destination);
+		osc.start(t);
+		osc.stop(t + 0.35);
+	}
+
+	// 성공 chime (validation passed)
+	static success() {
+		if (!JarvisFX._enabled) return;
+		const ctx = JarvisFX.ctx;
+		const t0 = ctx.currentTime;
+		[523, 659, 783].forEach((f, i) => {
+			const t = t0 + i * 0.06;
+			const osc = ctx.createOscillator();
+			osc.type = "triangle";
+			osc.frequency.value = f;
+			const g = ctx.createGain();
+			g.gain.setValueAtTime(0.001, t);
+			g.gain.exponentialRampToValueAtTime(0.15, t + 0.02);
+			g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+			osc.connect(g).connect(ctx.destination);
+			osc.start(t);
+			osc.stop(t + 0.22);
+		});
+	}
+
+	// 빅토리 팡파레 (발행 완료, 영화 클라이맥스)
+	static victory() {
+		if (!JarvisFX._enabled) return;
+		const ctx = JarvisFX.ctx;
+		// 1) bass-drop
+		JarvisFX.bassDrop();
+		// 2) chord arpeggio C-E-G-C 옥타브 상승
+		const t0 = ctx.currentTime + 0.2;
+		[523, 659, 783, 1046, 1318].forEach((f, i) => {
+			const t = t0 + i * 0.1;
+			const osc = ctx.createOscillator();
+			osc.type = "triangle";
+			osc.frequency.value = f;
+			const g = ctx.createGain();
+			g.gain.setValueAtTime(0.001, t);
+			g.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
+			g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+			osc.connect(g).connect(ctx.destination);
+			osc.start(t);
+			osc.stop(t + 0.4);
+		});
+	}
+
+	// JARVIS 보이스: 영국 남성 / 깊은 톤
+	static voice(text, opts = {}) {
+		if (!JarvisFX._enabled) return;
+		if (!window.speechSynthesis) return;
+		const u = new SpeechSynthesisUtterance(text);
+		u.lang = "en-GB";
+		u.rate = opts.rate || 0.95;
+		u.pitch = opts.pitch || 0.85;
+		u.volume = opts.volume || 0.8;
+		const voices = speechSynthesis.getVoices();
+		const preferred = voices.find((v) => /Daniel/i.test(v.name)) // macOS 영국 남성
+			|| voices.find((v) => /Microsoft Mark|Microsoft Guy|Microsoft David/i.test(v.name))
+			|| voices.find((v) => /Google.*UK.*Male/i.test(v.name))
+			|| voices.find((v) => v.lang === "en-GB")
+			|| voices.find((v) => v.lang === "en-US");
+		if (preferred) u.voice = preferred;
+		speechSynthesis.cancel();
+		speechSynthesis.speak(u);
+	}
+}
+
+// Phase별 JARVIS 보이스 라인
+const JARVIS_LINES = {
+	phase1:  { running: "Scanning topic. Cross-referencing.",       done: "Topic acquired, sir." },
+	phase2a: { running: "Forging analogy structure.",                done: "Analogy forged." },
+	phase2b: { running: "Parallel agents engaged.",                  done: "Composition complete." },
+	phase3a: { running: "Validating output.",                        done: "Validation passed." },
+	phase3b: { running: "Cross-checking facts.",                     done: "Facts verified." },
+	phase3c: { running: "Rendering visuals.",                        done: "Visuals deployed." },
+	phase4:  { running: "Quality assessment in progress.",           done: "All systems nominal." },
+	phase5:  { running: "Deploying to Blogger.",                     done: "Mission complete, sir." },
+};
+
 class PipelineUI {
 	static setPhase(id, state, timeMs) {
 		const el = document.getElementById(id);
@@ -7,6 +214,18 @@ class PipelineUI {
 		if (icon) icon.classList.remove("retry-shake");
 		const sub = document.getElementById(`${id}-sub`);
 		if (sub) sub.classList.remove("retry-flash");
+		// JARVIS SFX + \ubcf4\uc774\uc2a4 \ud2b8\ub9ac\uac70
+		if (state === "running") {
+			JarvisFX.transform();
+			const line = JARVIS_LINES[id]?.running;
+			if (line) setTimeout(() => JarvisFX.voice(line), 200);
+		} else if (state === "done") {
+			JarvisFX.success();
+			const line = JARVIS_LINES[id]?.done;
+			if (line) setTimeout(() => JarvisFX.voice(line), 200);
+		} else if (state === "fail") {
+			JarvisFX.alert();
+		}
 		if (state === "running") icon.innerHTML = '<div class="spinner"></div>';
 		else if (state === "done") icon.textContent = "\u2713";
 		else if (state === "fail") icon.textContent = "\u2717";
@@ -125,6 +344,9 @@ class PipelineUI {
 	static markRetry(phaseId, attempt, maxAttempts, reason) {
 		const row = document.getElementById(phaseId);
 		if (!row) return;
+		// JARVIS 알람 + 보이스
+		JarvisFX.alert();
+		setTimeout(() => JarvisFX.voice(`Retry sequence engaged. Attempt ${attempt} of ${maxAttempts}.`), 200);
 		// 1) row 클래스를 'phase running'으로 강제 복귀 (done/fail 상태 제거)
 		row.className = "phase running";
 		// 2) 게이지 0%로 리셋 후 running 애니메이션 재시작

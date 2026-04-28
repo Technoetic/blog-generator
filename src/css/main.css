@@ -24,6 +24,36 @@ body {
 .container {
 	max-width: 960px;
 	margin: 0 auto;
+	position: relative;
+}
+
+/* JARVIS SFX 토글 (우측 상단 사이버펑크 버튼) */
+.jarvis-toggle {
+	position: absolute;
+	top: 0;
+	right: 0;
+	padding: 8px 14px;
+	background: linear-gradient(135deg, rgba(34, 211, 238, 0.18), rgba(167, 139, 250, 0.18));
+	color: #22d3ee;
+	border: 1px solid rgba(34, 211, 238, 0.45);
+	border-radius: 8px;
+	font-size: 0.85em;
+	font-weight: 700;
+	letter-spacing: 0.5px;
+	cursor: pointer;
+	transition: all 0.2s;
+	font-family: 'Consolas', 'Monaco', monospace;
+	text-shadow: 0 0 8px rgba(34, 211, 238, 0.5);
+	box-shadow: 0 0 12px rgba(34, 211, 238, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+	z-index: 10;
+}
+.jarvis-toggle:hover {
+	background: linear-gradient(135deg, rgba(34, 211, 238, 0.3), rgba(167, 139, 250, 0.3));
+	transform: translateY(-1px);
+	box-shadow: 0 4px 16px rgba(34, 211, 238, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+.jarvis-toggle:active {
+	transform: translateY(0);
 }
 
 h1 {

@@ -52,3 +52,21 @@ async function regenerateTitle() {
 document.getElementById("topic").addEventListener("keydown", (e) => {
 	if (e.key === "Enter") startPipeline();
 });
+
+// JARVIS SFX 토글
+function toggleJarvis() {
+	JarvisFX.toggle();
+}
+
+// 초기 토글 버튼 상태 반영 + 음성 목록 미리 로드
+(function initJarvis() {
+	const btn = document.getElementById("jarvisToggle");
+	if (btn) {
+		btn.textContent = JarvisFX._enabled ? "🔊 SFX ON" : "🔇 SFX OFF";
+	}
+	// Web Speech voices 비동기 로드 트리거
+	if (window.speechSynthesis) {
+		speechSynthesis.getVoices();
+		speechSynthesis.addEventListener("voiceschanged", () => speechSynthesis.getVoices());
+	}
+})();

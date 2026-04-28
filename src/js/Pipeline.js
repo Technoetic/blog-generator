@@ -29,6 +29,11 @@ class Pipeline {
 		this._cancelled = false;
 		PipelineUI.startLiveTimer(this.startTime);
 
+		// JARVIS 부팅 시퀀스
+		JarvisFX.bassDrop();
+		setTimeout(() => JarvisFX.transform(), 250);
+		setTimeout(() => JarvisFX.voice("System online. Engaging analogy forge."), 500);
+
 		this._pendingWindow = null;
 
 		try {
@@ -451,6 +456,10 @@ class Pipeline {
 	static _showOpenModal(url, stats = {}) {
 		const existing = document.getElementById("blogOpenModal");
 		if (existing) existing.remove();
+
+		// JARVIS Victory 시퀀스: bass-drop + 팡파레 + "Mission complete"
+		JarvisFX.victory();
+		setTimeout(() => JarvisFX.voice("Mission complete, sir. Blog deployed.", { rate: 0.92, pitch: 0.85 }), 600);
 
 		const overlay = document.createElement("div");
 		overlay.id = "blogOpenModal";
