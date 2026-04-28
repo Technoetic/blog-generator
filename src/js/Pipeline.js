@@ -627,18 +627,26 @@ class Pipeline {
 					? webResults.map((r, i) => `[${i + 1}] ${r.title}\n${r.snippet}`).join("\n\n")
 					: "검색 결과 없음";
 				const searchResult = await ApiClient.callAgent(
-					`당신은 기술 리서처입니다. 아래 웹 검색 결과를 100% 신뢰하고, 그것에만 기반해서 주제 정보를 정리하세요.
+					`당신은 **기술 리서처**입니다. 이 주제를 **반드시 기술/소프트웨어/엔지니어링 도메인**으로 해석하세요. 게임/제품/일반 명칭이 검색 결과 상위에 있어도 무시하고 기술 해석을 우선하세요.
 
 🚨 절대 규칙:
-1. 검색 결과에 명시된 내용만 사용하라. 당신의 사전 지식은 컷오프 이후 정보가 없을 수 있어 부정확하다.
-2. 검색 결과의 고유명사(제품명, 회사명, 기술명)는 검색 결과의 표기를 그대로 따르라. 임의로 변형/축약/확장하지 말라.
-3. 사용자가 입력한 주제명이 검색 결과의 정식 명칭과 다르면, 검색 결과의 정식 명칭을 따르라.
-4. 검색 결과가 부족하더라도 사전 지식으로 보충하지 말고, 검색 결과 안에서만 정리하라.
+1. **기술 도메인 우선**: 주제가 "Deadlock"이면 게임이 아닌 **스레드 동시성 데드락**, "Reflow"이면 SMT 솔더링이 아닌 **CSS 브라우저 레이아웃 재계산**으로 해석하라. 모호한 영문 단어는 항상 기술 용어로 우선 해석.
+2. **사용자 입력 한글 힌트 우선**: 입력에 한글이 포함되면(예: "스레드 데드락"), 한글 도메인을 명확한 기술 용어로 사용하라.
+3. 검색 결과 중 **기술 도메인 항목만 채택**: 게임/엔터테인먼트/제품 출시 정보는 무시. 기술 블로그/문서/StackOverflow/MDN/Wikipedia 기술 페이지가 우선.
+4. 사전 지식보다 검색 결과 우선이지만, **검색이 게임/제품 정보로만 채워졌으면 사전 지식의 기술 해석으로 보충**하라.
+5. 고유명사 표기는 그대로 따르되, 도메인은 반드시 기술.
 
 ## 웹 검색 결과
 ${webContext}
 
-정리할 내용: 정의, 핵심 개념 3~5가지, 작동 원리, 주요 사용 사례, 장단점.`,
+## 모호 주제 처리 예시
+- "Deadlock" → 게임 (Valve) ❌ / **스레드 동시성 교착 상태** ✅
+- "Reflow" → 베이킹 ❌ / **CSS 브라우저 레이아웃 재계산** ✅
+- "Overhaul" → 자동차 정비 ❌ / **시스템 전면 재설계/리팩토링** ✅
+- "Cache" → 돈/현금 ❌ / **컴퓨터 캐시 메모리** ✅
+- "Pipeline" → 송유관 ❌ / **CI/CD 또는 데이터 파이프라인** ✅
+
+정리할 내용: 정의(기술 도메인), 핵심 개념 3~5가지, 작동 원리, 주요 사용 사례, 장단점.`,
 					[`기술 주제: ${topic}`],
 					{
 						thinking_budget: 1024,
@@ -678,6 +686,11 @@ ${researchContext || "조사 결과 없음 — 모델 지식으로 진행"}
 - 위 조사 결과에 나오는 정식 명칭/정의/개념을 그대로 사용하라.
 - 사용자 입력 주제와 조사 결과의 명칭이 달라도 조사 결과를 우선하라.
 - 사전 지식으로 임의의 기술 용어를 갖다 붙이지 말라.
+- **비유는 기술 본질의 "구조"를 매핑하라.** 표면적 단어 일치(예: 게임 이름이 같다고 게임으로 비유)는 비유가 아니다.
+  예: "Deadlock"이면 4가지 조건(상호배제/점유대기/비선점/순환대기)을 매핑할 비유 — 식당에서 두 손님이 서로 상대방 메뉴를 기다리는 상황 같은 구조.
+  ❌ 게임 Deadlock 자체를 설명 (그건 비유가 아님)
+  ❌ 단어 표면 일치 (deadlock=막힘=교통체증?)
+  ✅ 4조건 구조 매핑이 자연스러운 일상 비유 (식당/주차장/철도 분기점 등)
 
 중요: 모든 출력(confirmed_analogy, analogy_protagonist, analogy_space, structure_mapping 등)은 반드시 한국어로 작성하라.`,
 				[`기술 주제: ${topic}\n톤: ${tone}\n이미지 비율: ${ratio}`],
@@ -1035,7 +1048,10 @@ A1: fitness_score 7이상, A2: mapping 완전성, A3: 반례 3개이상, A4: 세
 			const wsFlood = wsRatio > 0.8 || / {1000,}|\t{1000,}/.test(body);
 			console.log(`Phase 2b 검증 (attempt ${attempt}): body=${bodyLen}자, ascii=${ascii}, 헤딩=${headings}, 최장줄=${maxLineLen}자, 공백비율=${(wsRatio * 100).toFixed(1)}%`);
 
-			const tooShort = bodyLen < 2500;
+			// 톤별 길이 임계 (Agent ② 프롬프트의 분량 가이드와 일치)
+			const minByTone = { "친근": 3000, "전문": 4000, "유머": 2500 };
+			const minLen = minByTone[tone] || 3000;
+			const tooShort = bodyLen < minLen;
 			const noAscii = ascii < 2;
 			const noHeadings = headings < 4;
 			const corrupted = tooLong || jsonInJson || runawayLine || wsFlood;
@@ -1050,7 +1066,7 @@ A1: fitness_score 7이상, A2: mapping 완전성, A3: 반례 3개이상, A4: 세
 			}
 
 			const reasons = [];
-			if (tooShort) reasons.push(`본문이 너무 짧음(${bodyLen}자, 최소 4000자 필요)`);
+			if (tooShort) reasons.push(`본문이 너무 짧음(${bodyLen}자, ${tone} 톤 최소 ${minLen}자 필요)`);
 			if (noAscii) reasons.push(`mermaid 다이어그램 부족(${ascii}개, 최소 2개 필요)`);
 			if (noHeadings) reasons.push(`소제목(##/###) 부족(${headings}개, 최소 4개 필요)`);
 			if (tooLong) reasons.push(`본문이 비정상적으로 김(${bodyLen}자, 50000자 초과)`);
@@ -1122,9 +1138,15 @@ A1: fitness_score 7이상, A2: mapping 완전성, A3: 반례 3개이상, A4: 세
 	// Phase 3a: 검증 + 재시도
 	async _phase3a(tone) {
 		const phase3aPrompt = `당신은 품질 검증 전문가입니다. 4단계 검증(조사→측정→근거→판정). 수정 제안 금지.
-B1~B13 검증. 톤: ${tone}. B2: 비유 용어는 기술 용어 아님. B4: 동의어 허용. B6: ±20% 허용.
+B1~B14 검증. 톤: ${tone}. B2: 비유 용어는 기술 용어 아님. B4: 동의어 허용. B6: ±20% 허용.
 B13(title_phrase 자연성): design.title_phrase_candidates의 5개 후보 중 어색한 한국어가 1개라도 있으면 FAIL.
 어색 기준: (a) 동사+명사 직역체 (예: "빵을 조립", "데이터를 처리") (b) topic 음역 포함 (Overhaul→오버홀, Reflow→리플로우 등) (c) ~의 ~ 2회 이상 (d) 일반 추상어 종결("시스템/방식/프로세스") (e) 6자 미만 또는 14자 초과.
+B14(비유 본질 매핑): structure_mapping이 기술의 핵심 작동 원리/구조를 매핑하는가, 단순히 표면 단어 일치로 게임/제품을 비유로 가져왔는가 검증.
+  ❌ 표면 일치 사례: topic="Deadlock"인데 Valve 게임 Deadlock으로 비유 (게임 자체가 비유 아님)
+  ❌ 표면 일치 사례: topic="Reflow"인데 SMT 솔더링 베이킹 공정 (CSS reflow의 본질 X)
+  ✅ 본질 매핑: topic="Deadlock"이면 4조건(상호배제/점유대기/비선점/순환대기)이 일상 비유의 4요소와 매핑
+  판정 기준: (a) 매핑 5개 이상 모두 기술 작동 원리를 반영하는가, (b) topic이 제품/게임/명사일 때 그 제품 자체가 아닌 그것의 동작 메커니즘을 비유로 풀었는가.
+  FAIL 시 fail_summary에 "비유가 기술 본질이 아닌 표면 일치 — Phase 1 주제 재해석 필요" 명시 (Phase 1 롤백 신호).
 모든 항목에 inspect/measure/evidence 필수.`;
 		const phase3aSchema = {
 			type: "object",

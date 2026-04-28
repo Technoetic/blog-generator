@@ -263,6 +263,20 @@ label {
 	letter-spacing: 1px;
 	margin-bottom: 6px;
 }
+label .hint {
+	color: rgba(255, 209, 102, 0.7);
+	font-size: 0.85em;
+	font-weight: 600;
+	text-transform: none;
+	letter-spacing: 0.3px;
+}
+.topic-hint {
+	margin-top: 6px;
+	font-size: 11px;
+	color: rgba(255, 209, 102, 0.55);
+	line-height: 1.5;
+	padding-left: 4px;
+}
 
 input[type="text"],
 select {
