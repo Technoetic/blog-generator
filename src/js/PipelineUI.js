@@ -3,11 +3,11 @@
 // JARVIS 사이버 보이스 + 트랜스포머 메탈릭 SFX + 사이버 앰비언트 BGM
 class JarvisFX {
 	static _ctx = null;
-	// 새로고침 시 항상 OFF로 시작 (localStorage 미사용 — 사용자가 매번 명시적으로 ON)
 	static _enabled = false;
 	static _bgmEnabled = false;
-	static _bgmNodes = null; // 활성 BGM 노드들 (정지용)
-	static _voiceAvailable = null; // 영어 보이스 존재 여부 캐시
+	static _bgmNodes = null;
+	static _voiceAvailable = null;
+	static _reverbIR = null; // ConvolutionReverb IR 캐시
 
 	static get ctx() {
 		if (!JarvisFX._ctx) JarvisFX._ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -186,15 +186,29 @@ class JarvisFX {
 		setTimeout(() => JarvisFX._playSfx("bassdrop", { volume: 0.5 }), 200);
 	}
 
-	// JARVIS/스타크래프트/트랜스포머 메카닉 보이스 처리
-	// 사전 녹음 mp3 (Google TTS 영어) → Web Audio로 통신/메카닉 변환:
-	//   1) playbackRate 0.92 — 약간 느리고 무겁게
-	//   2) Highpass 150Hz — 저음 럼블 제거
-	//   3) Bandpass 1500Hz Q1 — 라디오 통신 필터 (SCV 톤)
-	//   4) WaveShaper tanh*4 — metallic distortion (트랜스포머 메탈)
-	//   5) Ring modulation 30Hz — 살짝 robotic vibrato
-	//   6) Short delay 60ms feedback 0.25 — 메카닉 메아리
-	//   7) gain 0.55 — BGM 0.30과 균형
+	// 합성 ConvolutionReverb impulse response (BGM과 같은 공간감 부여, "큰 홀" 톤)
+	// 길이 1.5초, exponential decay, stereo
+	static _getReverbIR() {
+		if (JarvisFX._reverbIR) return JarvisFX._reverbIR;
+		const ctx = JarvisFX.ctx;
+		const sr = ctx.sampleRate;
+		const len = sr * 1.5; // 1.5초 reverb tail
+		const ir = ctx.createBuffer(2, len, sr);
+		for (let ch = 0; ch < 2; ch++) {
+			const data = ir.getChannelData(ch);
+			for (let i = 0; i < len; i++) {
+				// 노이즈 + exponential decay (early reflection 강조 + tail)
+				const decay = Math.pow(1 - i / len, 2.5);
+				data[i] = (Math.random() * 2 - 1) * decay;
+			}
+		}
+		JarvisFX._reverbIR = ir;
+		return ir;
+	}
+
+	// JARVIS/스타크래프트/트랜스포머 메카닉 보이스 처리 + Reverb 공간감
+	// 처리 체인: rate → HP 150 → BP 1500 → Peak +6 → Distortion → [Dry + Wet(Reverb)] → Master gain
+	// BGM과 같은 공간(큰 홀)에 있는 듯한 reverb tail로 "겉도는" 느낌 제거.
 	static voicePlay(key, opts = {}) {
 		if (!JarvisFX._enabled) return;
 		const ctx = JarvisFX.ctx;
@@ -205,77 +219,61 @@ class JarvisFX {
 			src.buffer = buf;
 			src.playbackRate.value = opts.rate || 0.92;
 
-			// 1) Highpass — 저음 럼블 컷 (통신 라인 필터)
+			// 1) Highpass — 저음 럼블 컷
 			const hp = ctx.createBiquadFilter();
 			hp.type = "highpass";
 			hp.frequency.value = 150;
 			hp.Q.value = 0.7;
 
-			// 2) Bandpass — 라디오/통신 톤 (스타크래프트 SCV처럼)
+			// 2) Bandpass — 라디오 통신 톤
 			const bp = ctx.createBiquadFilter();
 			bp.type = "bandpass";
 			bp.frequency.value = 1500;
 			bp.Q.value = 0.9;
 
-			// 3) Peaking @ 2500Hz +6dB — presence 강조 (음성 명료도 ↑)
+			// 3) Peaking @ 2500Hz +5dB — presence
 			const peak = ctx.createBiquadFilter();
 			peak.type = "peaking";
 			peak.frequency.value = 2500;
 			peak.Q.value = 1.2;
-			peak.gain.value = 6;
+			peak.gain.value = 5;
 
-			// 4) WaveShaper distortion — metallic crunchy
+			// 4) WaveShaper distortion — metallic
 			const dist = ctx.createWaveShaper();
 			const curve = new Float32Array(2048);
 			for (let i = 0; i < 2048; i++) {
 				const x = (i / 1024) - 1;
-				curve[i] = Math.tanh(x * 4); // 강한 tanh — metallic
+				curve[i] = Math.tanh(x * 3.5); // 약간 줄임 (4 → 3.5)
 			}
 			dist.curve = curve;
 			dist.oversample = "4x";
 
-			// 5) Ring modulation — robotic vibrato
-			// carrier sine 30Hz × 음성 신호 = AM modulation
-			const ringOsc = ctx.createOscillator();
-			ringOsc.type = "sine";
-			ringOsc.frequency.value = 30;
-			const ringGain = ctx.createGain();
-			ringGain.gain.value = 1.0;
-			const ringMod = ctx.createGain();
-			ringMod.gain.value = 0.7; // dry
-			const ringWet = ctx.createGain();
-			ringWet.gain.value = 0.3; // wet (ring 정도)
-			ringOsc.connect(ringGain).connect(ringWet.gain); // gain 변조
-			ringOsc.start();
-			ringOsc.stop(ctx.currentTime + 5);
+			// 5) Convolution Reverb — BGM과 같은 공간감 (1.5초 tail)
+			const reverb = ctx.createConvolver();
+			reverb.buffer = JarvisFX._getReverbIR();
 
-			// 6) Short delay — 메카닉 메아리 (트랜스포머 변신음 느낌)
-			const delay = ctx.createDelay(0.5);
-			delay.delayTime.value = 0.06;
-			const feedback = ctx.createGain();
-			feedback.gain.value = 0.25;
-			const wet = ctx.createGain();
-			wet.gain.value = 0.35;
+			// 6) Dry/Wet 믹싱 (dry 65% + wet 35%)
+			const dryGain = ctx.createGain();
+			dryGain.gain.value = 0.65;
+			const wetGain = ctx.createGain();
+			wetGain.gain.value = 0.35;
 
-			// 7) Master gain (BGM과 균형)
+			// 7) Master gain — BGM과 자연스럽게 묻히도록 0.55 → 0.38
 			const masterGain = ctx.createGain();
-			masterGain.gain.value = opts.volume || 0.55;
+			masterGain.gain.value = opts.volume || 0.38;
 
-			// 라우팅:
-			// src → playbackRate → hp → bp → peak → dist → masterGain → destination
-			//                                          ↘ delay → feedback → delay (echo loop)
-			//                                          ↘ wet → masterGain
+			// 라우팅: src → 처리체인 → split → (dry / reverb→wet) → master → out
 			src.connect(hp);
 			hp.connect(bp);
 			bp.connect(peak);
 			peak.connect(dist);
-			dist.connect(masterGain);
-			// 짧은 echo 분기
-			dist.connect(delay);
-			delay.connect(feedback);
-			feedback.connect(delay);
-			delay.connect(wet);
-			wet.connect(masterGain);
+			// dry 분기
+			dist.connect(dryGain);
+			dryGain.connect(masterGain);
+			// wet (reverb) 분기 → BGM과 같은 공간감
+			dist.connect(reverb);
+			reverb.connect(wetGain);
+			wetGain.connect(masterGain);
 			masterGain.connect(ctx.destination);
 			src.start();
 		};
