@@ -164,9 +164,32 @@
       </div>
 
       <div class="cost-bar" id="costBar" style="display:none;">
-        총 토큰: <span id="totalTokens">0</span> &nbsp;|&nbsp;
-        예상 비용: <span id="totalCost">₩0</span> &nbsp;|&nbsp;
-        총 소요: <span id="totalTime">0초</span>
+        <div class="cost-stats">
+          <div class="cost-stat">
+            <span class="cost-icon">⚡</span>
+            <span class="cost-label">토큰</span>
+            <span id="totalTokens" class="cost-value">0</span>
+            <span class="cost-rate" id="tokensRate"></span>
+          </div>
+          <div class="cost-stat">
+            <span class="cost-icon">💎</span>
+            <span class="cost-label">비용</span>
+            <span id="totalCost" class="cost-value">₩0</span>
+          </div>
+          <div class="cost-stat">
+            <span class="cost-icon">⏱</span>
+            <span class="cost-label">소요</span>
+            <span id="totalTime" class="cost-value">0초</span>
+          </div>
+        </div>
+        <div class="cost-progress">
+          <div class="cost-bar-track">
+            <div class="cost-bar-fill" id="costBarFill"></div>
+            <div class="cost-milestone" data-mile="100" style="left:10%"><span>₩100</span></div>
+            <div class="cost-milestone" data-mile="500" style="left:50%"><span>₩500</span></div>
+            <div class="cost-milestone" data-mile="1000" style="left:100%"><span>₩1K</span></div>
+          </div>
+        </div>
       </div>
     </div>
 

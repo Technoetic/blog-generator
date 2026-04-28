@@ -523,12 +523,62 @@ class PipelineUI {
 	static updateCost(totalTokens, totalCost) {
 		const bar = document.getElementById("costBar");
 		bar.style.display = "flex";
-		// 실제 _track 도달 — ticker 베이스 갱신 + 애니메이션
+		bar.classList.add("active"); // 활동 글로우 sweep 활성화
 		PipelineUI._tickerBaseTokens = totalTokens;
 		PipelineUI._tickerBaseCost = totalCost;
 		PipelineUI._lastTrackAt = Date.now();
 		PipelineUI._animateNumber("totalTokens", totalTokens, (v) => Math.round(v).toLocaleString());
 		PipelineUI._animateNumber("totalCost", totalCost, (v) => `₩${Math.round(v).toLocaleString()}`);
+		PipelineUI._updateCostBar(totalCost);
+		PipelineUI._checkMilestones(totalCost);
+	}
+
+	// 비용 진행 막대 업데이트 (₩0~₩1000 0~100%)
+	static _updateCostBar(cost) {
+		const fill = document.getElementById("costBarFill");
+		if (!fill) return;
+		const pct = Math.min(100, (cost / 1000) * 100);
+		fill.style.width = pct + "%";
+	}
+
+	// 마일스톤 도달 시 sparkle + 효과음
+	static _checkMilestones(cost) {
+		const milestones = document.querySelectorAll(".cost-milestone");
+		milestones.forEach((m) => {
+			const target = parseInt(m.dataset.mile);
+			if (cost >= target && !m.classList.contains("reached")) {
+				m.classList.add("reached");
+				if (typeof JarvisFX !== "undefined") JarvisFX.hudLock();
+				// sparkle 효과
+				const rect = m.getBoundingClientRect();
+				const cx = rect.left + rect.width / 2;
+				const cy = rect.top + rect.height / 2;
+				for (let i = 0; i < 6; i++) {
+					const sp = document.createElement("div");
+					sp.className = "stage-sparkle";
+					const angle = (Math.PI * 2 * i) / 6;
+					const dist = 40 + Math.random() * 20;
+					sp.style.left = `${cx}px`;
+					sp.style.top = `${cy}px`;
+					sp.style.setProperty("--dx", `${Math.cos(angle) * dist}px`);
+					sp.style.setProperty("--dy", `${Math.sin(angle) * dist}px`);
+					document.body.appendChild(sp);
+					setTimeout(() => sp.remove(), 900);
+				}
+			}
+		});
+	}
+
+	// tokens/sec 레이트 표시
+	static _updateTokensRate(ratePerSec) {
+		const el = document.getElementById("tokensRate");
+		if (!el) return;
+		if (ratePerSec > 0) {
+			el.textContent = `+${Math.round(ratePerSec)}/s`;
+			el.classList.add("visible");
+		} else {
+			el.classList.remove("visible");
+		}
 	}
 
 	// running phase id에 따라 예상 token rate (tokens/sec)
@@ -615,11 +665,15 @@ class PipelineUI {
 			const running = document.querySelector(".phase.running");
 			if (running) {
 				const sinceTrack = (Date.now() - PipelineUI._lastTrackAt) / 1000;
-				const rate = PipelineUI._estimateRate(running.id); // tokens/sec
+				const rate = PipelineUI._estimateRate(running.id);
 				const tokensTick = PipelineUI._tickerBaseTokens + Math.floor(sinceTrack * rate);
-				const costTick = PipelineUI._tickerBaseCost + sinceTrack * rate * 0.0008; // 대략 ₩/tok
+				const costTick = PipelineUI._tickerBaseCost + sinceTrack * rate * 0.0008;
 				PipelineUI._renderTickerValue("totalTokens", tokensTick, (v) => Math.round(v).toLocaleString());
 				PipelineUI._renderTickerValue("totalCost", costTick, (v) => `₩${Math.round(v).toLocaleString()}`);
+				PipelineUI._updateCostBar(costTick);
+				PipelineUI._updateTokensRate(rate); // tokens/sec 표시
+			} else {
+				PipelineUI._updateTokensRate(0); // 진행 중 phase 없으면 hidden
 			}
 		};
 		tick();
@@ -630,6 +684,10 @@ class PipelineUI {
 			clearInterval(PipelineUI._timerHandle);
 			PipelineUI._timerHandle = null;
 		}
+		// 활동 글로우 sweep 정지
+		const bar = document.getElementById("costBar");
+		if (bar) bar.classList.remove("active");
+		PipelineUI._updateTokensRate(0);
 	}
 
 	// 전체 진행도 게이지 업데이트 (1/8 → 8/8)
