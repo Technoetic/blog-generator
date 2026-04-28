@@ -55,8 +55,8 @@ class JarvisFX {
 		if (playPromise) {
 			playPromise.catch((e) => console.warn("[BGM] autoplay blocked:", e.message));
 		}
-		// fade in 2초 (잔잔하게 — SFX/Voice가 위에서 들릴 수 있게)
-		const targetVol = 0.18;
+		// fade in 2초 (Voice/SFX와 균형 잡힌 음량)
+		const targetVol = 0.30;
 		const steps = 40;
 		const dt = 50;
 		let step = 0;
@@ -241,40 +241,97 @@ class JarvisFX {
 		});
 	}
 
-	// JARVIS 보이스: 사전 녹음 mp3 (영어) + Web Audio 로보틱 처리
-	// (Google Translate TTS로 사전 생성한 깨끗한 영어 발음 → playbackRate + lowshelf EQ로 robotic 톤)
-	// key: assets/voice/{key}.mp3 파일명
+	// JARVIS/스타크래프트/트랜스포머 메카닉 보이스 처리
+	// 사전 녹음 mp3 (Google TTS 영어) → Web Audio로 통신/메카닉 변환:
+	//   1) playbackRate 0.92 — 약간 느리고 무겁게
+	//   2) Highpass 150Hz — 저음 럼블 제거
+	//   3) Bandpass 1500Hz Q1 — 라디오 통신 필터 (SCV 톤)
+	//   4) WaveShaper tanh*4 — metallic distortion (트랜스포머 메탈)
+	//   5) Ring modulation 30Hz — 살짝 robotic vibrato
+	//   6) Short delay 60ms feedback 0.25 — 메카닉 메아리
+	//   7) gain 0.55 — BGM 0.30과 균형
 	static voicePlay(key, opts = {}) {
 		if (!JarvisFX._enabled) return;
 		const ctx = JarvisFX.ctx;
 		const url = `assets/voice/${key}.mp3`;
-		// 캐시
 		JarvisFX._voiceBuf = JarvisFX._voiceBuf || {};
 		const playBuf = (buf) => {
 			const src = ctx.createBufferSource();
 			src.buffer = buf;
-			src.playbackRate.value = opts.rate || 0.88; // 천천히 = 더 낮은 톤 + 권위감
-			// EQ: 저음 부각(JARVIS 깊은 톤) + 고음 약간 깎음
-			const lowShelf = ctx.createBiquadFilter();
-			lowShelf.type = "lowshelf";
-			lowShelf.frequency.value = 250;
-			lowShelf.gain.value = 4; // +4dB 저음 부스트
-			const highShelf = ctx.createBiquadFilter();
-			highShelf.type = "highshelf";
-			highShelf.frequency.value = 4000;
-			highShelf.gain.value = -3; // 고음 약간 컷
-			// 약간의 distortion (waveshaper)으로 metallic 느낌
+			src.playbackRate.value = opts.rate || 0.92;
+
+			// 1) Highpass — 저음 럼블 컷 (통신 라인 필터)
+			const hp = ctx.createBiquadFilter();
+			hp.type = "highpass";
+			hp.frequency.value = 150;
+			hp.Q.value = 0.7;
+
+			// 2) Bandpass — 라디오/통신 톤 (스타크래프트 SCV처럼)
+			const bp = ctx.createBiquadFilter();
+			bp.type = "bandpass";
+			bp.frequency.value = 1500;
+			bp.Q.value = 0.9;
+
+			// 3) Peaking @ 2500Hz +6dB — presence 강조 (음성 명료도 ↑)
+			const peak = ctx.createBiquadFilter();
+			peak.type = "peaking";
+			peak.frequency.value = 2500;
+			peak.Q.value = 1.2;
+			peak.gain.value = 6;
+
+			// 4) WaveShaper distortion — metallic crunchy
 			const dist = ctx.createWaveShaper();
 			const curve = new Float32Array(2048);
 			for (let i = 0; i < 2048; i++) {
 				const x = (i / 1024) - 1;
-				curve[i] = Math.tanh(x * 1.5); // 부드러운 saturation
+				curve[i] = Math.tanh(x * 4); // 강한 tanh — metallic
 			}
 			dist.curve = curve;
-			dist.oversample = "2x";
-			const gain = ctx.createGain();
-			gain.gain.value = opts.volume || 1.4; // BGM 위에서 잘 들리게 (BGM 0.22 vs voice 1.4)
-			src.connect(lowShelf).connect(highShelf).connect(dist).connect(gain).connect(ctx.destination);
+			dist.oversample = "4x";
+
+			// 5) Ring modulation — robotic vibrato
+			// carrier sine 30Hz × 음성 신호 = AM modulation
+			const ringOsc = ctx.createOscillator();
+			ringOsc.type = "sine";
+			ringOsc.frequency.value = 30;
+			const ringGain = ctx.createGain();
+			ringGain.gain.value = 1.0;
+			const ringMod = ctx.createGain();
+			ringMod.gain.value = 0.7; // dry
+			const ringWet = ctx.createGain();
+			ringWet.gain.value = 0.3; // wet (ring 정도)
+			ringOsc.connect(ringGain).connect(ringWet.gain); // gain 변조
+			ringOsc.start();
+			ringOsc.stop(ctx.currentTime + 5);
+
+			// 6) Short delay — 메카닉 메아리 (트랜스포머 변신음 느낌)
+			const delay = ctx.createDelay(0.5);
+			delay.delayTime.value = 0.06;
+			const feedback = ctx.createGain();
+			feedback.gain.value = 0.25;
+			const wet = ctx.createGain();
+			wet.gain.value = 0.35;
+
+			// 7) Master gain (BGM과 균형)
+			const masterGain = ctx.createGain();
+			masterGain.gain.value = opts.volume || 0.55;
+
+			// 라우팅:
+			// src → playbackRate → hp → bp → peak → dist → masterGain → destination
+			//                                          ↘ delay → feedback → delay (echo loop)
+			//                                          ↘ wet → masterGain
+			src.connect(hp);
+			hp.connect(bp);
+			bp.connect(peak);
+			peak.connect(dist);
+			dist.connect(masterGain);
+			// 짧은 echo 분기
+			dist.connect(delay);
+			delay.connect(feedback);
+			feedback.connect(delay);
+			delay.connect(wet);
+			wet.connect(masterGain);
+			masterGain.connect(ctx.destination);
 			src.start();
 		};
 		if (JarvisFX._voiceBuf[key]) {
