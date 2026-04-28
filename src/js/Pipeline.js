@@ -977,9 +977,25 @@ A1: fitness_score 7이상, A2: mapping 완전성, A3: 반례 3개이상, A4: 세
 					},
 				),
 				ApiClient.callAgent(
-					`당신은 이미지 프롬프트 전문가입니다. 영문 프롬프트 3개 생성.
-프롬프트 공식: [스타일]+[피사체]+[동작]+[배경]+[분위기]+[기술 요소 시각화]
-텍스트 규칙: 영문만 허용. 한글 금지. 끝에 "English text only, no Korean" 추가.
+					`당신은 이미지 프롬프트 전문가입니다. 영문 프롬프트 3개 생성 (intro/middle/outro).
+
+🚨 절대 규칙 1 — 인물 비주얼 일관성:
+- design.confirmed_analogy / analogy_protagonist에서 인물 정보를 추출해 **명시적으로 영문 묘사**.
+- 한국 이름(철수/영희/민수 등) → "Korean teenage student/young Korean man-woman/Korean office worker" 등 인종+나이대 명시.
+- 3장 모두 같은 인물 (외모/옷/스타일 동일하게 유지) — "same two characters as introduced" 명시.
+  ❌ 잘못: "two students" (인종 추상화 → 백인 남성 기본값)
+  ✅ 올바름: "Two Korean teenage students, one boy with short black hair, one girl with long black hair, both wearing casual modern Korean school clothes"
+
+🚨 절대 규칙 2 — 이미지 내 텍스트 완전 금지:
+- Nano Banana는 텍스트 렌더링 매우 약함 → "CRIPECTION", "ATME", "LAWVER" 같은 깨진 영문 자주 발생.
+- 끝에 반드시: "**NO text, NO words, NO letters, NO labels, NO captions, NO writing, NO signs, NO speech bubbles. Pure visual illustration only.**"
+- 노트북/책 등 종이 표면이 등장하면 "**blank pages or only abstract scribbles/sketches, NO readable text**" 명시.
+
+🚨 절대 규칙 3 — 비유 세계관 충실:
+- design.worldview의 공간/소품을 그대로 영문으로 옮겨라.
+- 본문에 "공책"이 등장하면 이미지에도 "open notebook" — 추상화 금지.
+
+프롬프트 공식: [스타일]+[피사체(인물 영문 묘사)]+[동작]+[배경]+[분위기]+[비유 핵심 소품]+[텍스트 금지 명시]
 톤: ${tone} | 비율: ${ratio}`,
 					[
 						JSON.stringify(this.results.contextPacket),
