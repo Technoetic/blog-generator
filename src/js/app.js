@@ -61,7 +61,7 @@ function toggleBgm() {
 	JarvisFX.toggleBgm();
 }
 
-// 초기 토글 버튼 상태 반영 + 음성 목록 미리 로드
+// 초기 토글 버튼 상태 반영 + 음성 목록 미리 로드 + 첫 클릭 시 BGM 자동 시작
 (function initJarvis() {
 	const sfxBtn = document.getElementById("jarvisToggle");
 	if (sfxBtn) sfxBtn.textContent = JarvisFX._enabled ? "🔊 SFX ON" : "🔇 SFX OFF";
@@ -72,11 +72,20 @@ function toggleBgm() {
 		speechSynthesis.getVoices();
 		speechSynthesis.addEventListener("voiceschanged", () => {
 			speechSynthesis.getVoices();
-			JarvisFX._voiceAvailable = null; // 캐시 리셋
-			// 영어 보이스 없으면 콘솔 안내
-			if (!JarvisFX.hasEnglishMaleVoice()) {
-				console.warn("[JARVIS] No English voice available. SFX only mode.");
-			}
+			JarvisFX._voiceAvailable = null;
 		});
 	}
+	// 페이지 첫 사용자 인터랙션 시 BGM 자동 시작 (브라우저 자동재생 정책 준수)
+	// 토글 버튼이 ON 상태이면(기본 ON) 첫 클릭/키 입력 즉시 BGM fade in.
+	let bgmAutoStarted = false;
+	const tryStartBgm = () => {
+		if (bgmAutoStarted) return;
+		if (!JarvisFX._enabled || !JarvisFX._bgmEnabled) return;
+		bgmAutoStarted = true;
+		JarvisFX.startBgm();
+	};
+	// click / keydown / touchstart — 사용자 액션이면 자동재생 정책 통과
+	document.addEventListener("click", tryStartBgm, { once: true, capture: true });
+	document.addEventListener("keydown", tryStartBgm, { once: true, capture: true });
+	document.addEventListener("touchstart", tryStartBgm, { once: true, capture: true });
 })();

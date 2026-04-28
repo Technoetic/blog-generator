@@ -68,6 +68,22 @@ body {
 	box-shadow: 0 4px 16px rgba(167, 139, 250, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
+/* 페이지 로드 시 BGM 토글 가벼운 펄스 (사용자 클릭 유도, 자동재생 정책 우회 안내) */
+@keyframes jarvis-toggle-pulse {
+	0%, 100% { box-shadow: 0 0 12px rgba(34, 211, 238, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1); }
+	50%      { box-shadow: 0 0 24px rgba(34, 211, 238, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.2); }
+}
+.jarvis-toggle:not(:hover) {
+	animation: jarvis-toggle-pulse 3s ease-in-out infinite;
+}
+@keyframes jarvis-toggle-pulse-purple {
+	0%, 100% { box-shadow: 0 0 12px rgba(167, 139, 250, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1); }
+	50%      { box-shadow: 0 0 24px rgba(167, 139, 250, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.2); }
+}
+.jarvis-toggle.bgm-toggle-btn:not(:hover) {
+	animation: jarvis-toggle-pulse-purple 3s ease-in-out infinite;
+}
+
 h1 {
 	font-size: 28px;
 	font-weight: 700;
