@@ -186,29 +186,39 @@ class JarvisFX {
 		setTimeout(() => JarvisFX._playSfx("bassdrop", { volume: 0.5 }), 200);
 	}
 
-	// 합성 ConvolutionReverb impulse response (BGM과 같은 공간감 부여, "큰 홀" 톤)
-	// 길이 1.5초, exponential decay, stereo
+	// 동굴급 ConvolutionReverb IR — 3.5초 긴 tail, 천천히 사라짐
+	// 큰 동굴/대성당 공간감 (Hans Zimmer 영화 톤)
 	static _getReverbIR() {
 		if (JarvisFX._reverbIR) return JarvisFX._reverbIR;
 		const ctx = JarvisFX.ctx;
 		const sr = ctx.sampleRate;
-		const len = sr * 1.5; // 1.5초 reverb tail
+		const len = Math.floor(sr * 3.5); // 3.5초 동굴 tail (이전 1.5초)
 		const ir = ctx.createBuffer(2, len, sr);
 		for (let ch = 0; ch < 2; ch++) {
 			const data = ir.getChannelData(ch);
+			// Early reflection 강화 (첫 100ms 강한 반사)
+			const earlyLen = Math.floor(sr * 0.1);
 			for (let i = 0; i < len; i++) {
-				// 노이즈 + exponential decay (early reflection 강조 + tail)
-				const decay = Math.pow(1 - i / len, 2.5);
-				data[i] = (Math.random() * 2 - 1) * decay;
+				const t = i / len;
+				// decay 곡선: 처음엔 천천히, 뒤로 갈수록 부드럽게 (1.8 지수 — 이전 2.5보다 완만)
+				const decay = Math.pow(1 - t, 1.8);
+				let sample = (Math.random() * 2 - 1) * decay;
+				// 첫 100ms 동안 + early reflection burst (반사 패턴)
+				if (i < earlyLen) {
+					sample *= 1 + Math.sin(i * 0.1) * 0.3;
+				}
+				// 좌우 채널 살짝 다르게 (stereo 폭)
+				if (ch === 1) sample *= 0.92;
+				data[i] = sample * 0.7; // 클리핑 방지
 			}
 		}
 		JarvisFX._reverbIR = ir;
 		return ir;
 	}
 
-	// SF 영화 톤 보이스 처리 (Brian 영국 남성 다큐멘터리 보이스 + 미니멀 후처리)
-	// Brian이 이미 깊고 멋있는 톤이라 distortion/bandpass 빼고 reverb + 살짝 EQ만.
-	// 처리 체인: rate → HP 100 → Peak +3 → [Dry + Wet(Reverb)] → Master gain
+	// SF 영화 동굴 톤 보이스 처리 (Brian + 베이스 부각 + 동굴 reverb)
+	// 처리 체인: rate 0.85 → HP 60 → SubShelf+5dB@80 → LowShelf+8dB@200 → Peak+2@3k
+	//        → split → dry 60% / Reverb(predelay 80ms + 3.5s) wet 40% → Master 0.55
 	static voicePlay(key, opts = {}) {
 		if (!JarvisFX._enabled) return;
 		const ctx = JarvisFX.ctx;
@@ -217,48 +227,62 @@ class JarvisFX {
 		const playBuf = (buf) => {
 			const src = ctx.createBufferSource();
 			src.buffer = buf;
-			src.playbackRate.value = opts.rate || 0.95; // 거의 원래 속도 (Brian은 이미 천천히 말함)
+			src.playbackRate.value = opts.rate || 0.85; // 더 느리고 무겁게 (베이스 자연 강조)
 
-			// 1) Highpass — 저음 럼블만 약하게 컷 (Brian의 깊은 베이스 보존)
+			// 1) Highpass — 60Hz 이하만 컷 (sub-bass 살림)
 			const hp = ctx.createBiquadFilter();
 			hp.type = "highpass";
-			hp.frequency.value = 80;
+			hp.frequency.value = 60;
 			hp.Q.value = 0.7;
 
-			// 2) Low shelf @ 200Hz +3dB — 베이스 부각 (영화 내레이터 톤)
+			// 2) Sub-bass shelf @ 80Hz +5dB — 가슴 울리는 저주파
+			const subShelf = ctx.createBiquadFilter();
+			subShelf.type = "lowshelf";
+			subShelf.frequency.value = 80;
+			subShelf.gain.value = 5;
+
+			// 3) Low shelf @ 200Hz +8dB — 영화 내레이터 깊은 베이스 (이전 +3dB)
 			const lowShelf = ctx.createBiquadFilter();
 			lowShelf.type = "lowshelf";
 			lowShelf.frequency.value = 200;
-			lowShelf.gain.value = 3;
+			lowShelf.gain.value = 8;
 
-			// 3) Peaking @ 3000Hz +2dB — presence 살짝 (명료도 유지)
+			// 4) Peaking @ 3000Hz +2dB — presence 유지
 			const peak = ctx.createBiquadFilter();
 			peak.type = "peaking";
 			peak.frequency.value = 3000;
 			peak.Q.value = 1.0;
 			peak.gain.value = 2;
 
-			// 4) Convolution Reverb — SF 영화 공간감 (1.5초 tail)
+			// 5) Pre-delay 80ms — 큰 공간 반사 지연 (동굴 공간감)
+			const preDelay = ctx.createDelay(0.5);
+			preDelay.delayTime.value = 0.08;
+
+			// 6) Convolution Reverb — 동굴 3.5초 tail
 			const reverb = ctx.createConvolver();
 			reverb.buffer = JarvisFX._getReverbIR();
 
-			// 5) Dry/Wet 믹싱 (dry 75% + wet 25% — Brian 음성 명료도 유지)
+			// 7) Dry/Wet 믹싱 (dry 60% + wet 40% — 동굴 효과 강조)
 			const dryGain = ctx.createGain();
-			dryGain.gain.value = 0.75;
+			dryGain.gain.value = 0.60;
 			const wetGain = ctx.createGain();
-			wetGain.gain.value = 0.25;
+			wetGain.gain.value = 0.40;
 
-			// 6) Master gain (BGM 0.30 대비 1.67배 — 자연스러운 보이스오버)
+			// 8) Master gain — 베이스 부스트로 음량 약간 올라가니 0.50→0.55
 			const masterGain = ctx.createGain();
-			masterGain.gain.value = opts.volume || 0.50;
+			masterGain.gain.value = opts.volume || 0.55;
 
-			// 라우팅
+			// 라우팅: src → HP → SubShelf → LowShelf → Peak
+			//                                          ├─ dry → master
+			//                                          └─ preDelay → Reverb → wet → master
 			src.connect(hp);
-			hp.connect(lowShelf);
+			hp.connect(subShelf);
+			subShelf.connect(lowShelf);
 			lowShelf.connect(peak);
 			peak.connect(dryGain);
 			dryGain.connect(masterGain);
-			peak.connect(reverb);
+			peak.connect(preDelay);
+			preDelay.connect(reverb);
 			reverb.connect(wetGain);
 			wetGain.connect(masterGain);
 			masterGain.connect(ctx.destination);
