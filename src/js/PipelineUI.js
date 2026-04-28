@@ -145,157 +145,45 @@ class JarvisFX {
 		setTimeout(() => { JarvisFX._bgmNodes = []; }, 1700);
 	}
 
-	// 메탈릭 transform 사운드 (트랜스포머 변신음)
-	static transform() {
+	// SFX 재생 (Mixkit royalty-free sci-fi mp3 — 합성 사운드보다 영화급 음질)
+	// 7종: transform / bassDrop / hudLock / alert / servo / success / victory
+	// 첫 호출 시 fetch + decode 후 캐싱, 이후 즉시 재생.
+	static _sfxBuf = {};
+	static _playSfx(key, opts = {}) {
 		if (!JarvisFX._enabled) return;
 		const ctx = JarvisFX.ctx;
-		const t = ctx.currentTime;
-		// 1) 메탈 click — high-frequency white noise burst 50ms
-		const buf = ctx.createBuffer(1, ctx.sampleRate * 0.05, ctx.sampleRate);
-		const data = buf.getChannelData(0);
-		for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
-		const noise = ctx.createBufferSource();
-		noise.buffer = buf;
-		const noiseGain = ctx.createGain();
-		noiseGain.gain.value = 0.15;
-		const noiseFilter = ctx.createBiquadFilter();
-		noiseFilter.type = "highpass";
-		noiseFilter.frequency.value = 2000;
-		noise.connect(noiseFilter).connect(noiseGain).connect(ctx.destination);
-		noise.start(t);
-		// 2) sawtooth pitch slide 80→400Hz (메탈 기어 회전)
-		const osc = ctx.createOscillator();
-		osc.type = "sawtooth";
-		osc.frequency.setValueAtTime(80, t);
-		osc.frequency.exponentialRampToValueAtTime(400, t + 0.3);
-		const og = ctx.createGain();
-		og.gain.setValueAtTime(0.001, t);
-		og.gain.exponentialRampToValueAtTime(0.18, t + 0.05);
-		og.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
-		osc.connect(og).connect(ctx.destination);
-		osc.start(t);
-		osc.stop(t + 0.4);
+		const url = `assets/sfx/${key}.mp3`;
+		const playBuf = (buf) => {
+			const src = ctx.createBufferSource();
+			src.buffer = buf;
+			const gain = ctx.createGain();
+			gain.gain.value = opts.volume || 0.7; // BGM 0.30 / SFX 0.7 / Voice 0.55
+			src.connect(gain).connect(ctx.destination);
+			src.start();
+		};
+		if (JarvisFX._sfxBuf[key]) { playBuf(JarvisFX._sfxBuf[key]); return; }
+		fetch(url).then((r) => r.arrayBuffer()).then((ab) => ctx.decodeAudioData(ab)).then((buf) => {
+			JarvisFX._sfxBuf[key] = buf;
+			playBuf(buf);
+		}).catch((e) => console.warn(`[SFX] ${key}.mp3 load fail:`, e.message));
 	}
 
-	// 베이스 드롭 (아이언맨 부팅음, sub-bass 60Hz + harmonics)
-	static bassDrop() {
-		if (!JarvisFX._enabled) return;
-		const ctx = JarvisFX.ctx;
-		const t = ctx.currentTime;
-		[60, 120, 180].forEach((f, i) => {
-			const osc = ctx.createOscillator();
-			osc.type = "sine";
-			osc.frequency.value = f;
-			const g = ctx.createGain();
-			g.gain.setValueAtTime(0.001, t);
-			g.gain.exponentialRampToValueAtTime(0.4 / (i + 1), t + 0.05);
-			g.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
-			osc.connect(g).connect(ctx.destination);
-			osc.start(t);
-			osc.stop(t + 0.8);
-		});
-	}
-
-	// HUD 락온 (square wave triple beep)
-	static hudLock() {
-		if (!JarvisFX._enabled) return;
-		const ctx = JarvisFX.ctx;
-		const t0 = ctx.currentTime;
-		[0, 0.08, 0.16].forEach((d) => {
-			const t = t0 + d;
-			const osc = ctx.createOscillator();
-			osc.type = "square";
-			osc.frequency.value = 880;
-			const g = ctx.createGain();
-			g.gain.setValueAtTime(0.001, t);
-			g.gain.exponentialRampToValueAtTime(0.12, t + 0.01);
-			g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
-			osc.connect(g).connect(ctx.destination);
-			osc.start(t);
-			osc.stop(t + 0.07);
-		});
-	}
-
-	// 알람 펄스 (재시도/실패 — 빨간 경보)
-	static alert() {
-		if (!JarvisFX._enabled) return;
-		const ctx = JarvisFX.ctx;
-		const t0 = ctx.currentTime;
-		[0, 0.15, 0.3].forEach((d) => {
-			const t = t0 + d;
-			const osc = ctx.createOscillator();
-			osc.type = "square";
-			osc.frequency.value = 660;
-			const g = ctx.createGain();
-			g.gain.setValueAtTime(0.001, t);
-			g.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
-			g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
-			osc.connect(g).connect(ctx.destination);
-			osc.start(t);
-			osc.stop(t + 0.12);
-		});
-	}
-
-	// 서보 모터 (이미지/병렬 처리)
-	static servo() {
-		if (!JarvisFX._enabled) return;
-		const ctx = JarvisFX.ctx;
-		const t = ctx.currentTime;
-		const osc = ctx.createOscillator();
-		osc.type = "triangle";
-		osc.frequency.setValueAtTime(220, t);
-		osc.frequency.linearRampToValueAtTime(440, t + 0.15);
-		osc.frequency.linearRampToValueAtTime(220, t + 0.3);
-		const g = ctx.createGain();
-		g.gain.setValueAtTime(0.001, t);
-		g.gain.exponentialRampToValueAtTime(0.1, t + 0.05);
-		g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
-		osc.connect(g).connect(ctx.destination);
-		osc.start(t);
-		osc.stop(t + 0.35);
-	}
-
-	// 성공 chime (validation passed)
-	static success() {
-		if (!JarvisFX._enabled) return;
-		const ctx = JarvisFX.ctx;
-		const t0 = ctx.currentTime;
-		[523, 659, 783].forEach((f, i) => {
-			const t = t0 + i * 0.06;
-			const osc = ctx.createOscillator();
-			osc.type = "triangle";
-			osc.frequency.value = f;
-			const g = ctx.createGain();
-			g.gain.setValueAtTime(0.001, t);
-			g.gain.exponentialRampToValueAtTime(0.15, t + 0.02);
-			g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-			osc.connect(g).connect(ctx.destination);
-			osc.start(t);
-			osc.stop(t + 0.22);
-		});
-	}
-
-	// 빅토리 팡파레 (발행 완료, 영화 클라이맥스)
-	static victory() {
-		if (!JarvisFX._enabled) return;
-		const ctx = JarvisFX.ctx;
-		// 1) bass-drop
-		JarvisFX.bassDrop();
-		// 2) chord arpeggio C-E-G-C 옥타브 상승
-		const t0 = ctx.currentTime + 0.2;
-		[523, 659, 783, 1046, 1318].forEach((f, i) => {
-			const t = t0 + i * 0.1;
-			const osc = ctx.createOscillator();
-			osc.type = "triangle";
-			osc.frequency.value = f;
-			const g = ctx.createGain();
-			g.gain.setValueAtTime(0.001, t);
-			g.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
-			g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
-			osc.connect(g).connect(ctx.destination);
-			osc.start(t);
-			osc.stop(t + 0.4);
-		});
+	// 트랜스포머 메탈 변신음 (Mixkit "Mechanical brush transition")
+	static transform()  { JarvisFX._playSfx("transform", { volume: 0.6 }); }
+	// 아이언맨 베이스 드롭 (Mixkit "Apocalyptic stomp impact")
+	static bassDrop()   { JarvisFX._playSfx("bassdrop",  { volume: 0.7 }); }
+	// HUD 락온 확인음 (Mixkit "Sci Fi confirmation")
+	static hudLock()    { JarvisFX._playSfx("hudlock",   { volume: 0.6 }); }
+	// 빨간 경보 (Mixkit "Sci-Fi error alert")
+	static alert()      { JarvisFX._playSfx("alert",     { volume: 0.55 }); }
+	// 서보 모터 클릭 (Mixkit "Sci fi interface robot click")
+	static servo()      { JarvisFX._playSfx("servo",     { volume: 0.55 }); }
+	// 성공 chime (Mixkit "Sci Fi positive notification")
+	static success()    { JarvisFX._playSfx("success",   { volume: 0.6 }); }
+	// 발행 완료 팡파레 (Mixkit "Futuristic space intro")
+	static victory()    {
+		JarvisFX._playSfx("victory", { volume: 0.7 });
+		setTimeout(() => JarvisFX._playSfx("bassdrop", { volume: 0.5 }), 200);
 	}
 
 	// JARVIS/스타크래프트/트랜스포머 메카닉 보이스 처리
