@@ -53,12 +53,11 @@ document.getElementById("topic").addEventListener("keydown", (e) => {
 	if (e.key === "Enter") startPipeline();
 });
 
-// JARVIS SFX 토글 (스위치 input checked → state)
+// JARVIS SFX 토글 (스위치 input checked → state). 새로고침 시 OFF 시작 — localStorage 저장 안 함.
 function toggleJarvis() {
 	const cb = document.getElementById("jarvisToggle");
 	if (!cb) return;
 	JarvisFX._enabled = cb.checked;
-	localStorage.setItem("jarvisFxEnabled", cb.checked);
 	if (cb.checked) JarvisFX.bassDrop();
 	else JarvisFX.stopBgm();
 }
@@ -66,18 +65,19 @@ function toggleBgm() {
 	const cb = document.getElementById("bgmToggle");
 	if (!cb) return;
 	JarvisFX._bgmEnabled = cb.checked;
-	localStorage.setItem("jarvisBgmEnabled", cb.checked);
 	if (cb.checked) JarvisFX.startBgm();
 	else JarvisFX.stopBgm();
 }
 
-// 초기 스위치 상태 반영 + 음성 목록 미리 로드 + 첫 클릭 시 BGM 자동 시작
+// 초기 스위치 상태 강제 OFF + 음성 목록 미리 로드
 (function initJarvis() {
 	const sfxCb = document.getElementById("jarvisToggle");
-	if (sfxCb) sfxCb.checked = JarvisFX._enabled;
+	if (sfxCb) sfxCb.checked = false;
 	const bgmCb = document.getElementById("bgmToggle");
-	if (bgmCb) bgmCb.checked = JarvisFX._bgmEnabled;
-	// Web Speech voices 비동기 로드 트리거
+	if (bgmCb) bgmCb.checked = false;
+	JarvisFX._enabled = false;
+	JarvisFX._bgmEnabled = false;
+	// Web Speech voices 비동기 로드 트리거 (음성 메타데이터만 캐싱, 재생 안 함)
 	if (window.speechSynthesis) {
 		speechSynthesis.getVoices();
 		speechSynthesis.addEventListener("voiceschanged", () => {
@@ -85,17 +85,4 @@ function toggleBgm() {
 			JarvisFX._voiceAvailable = null;
 		});
 	}
-	// 페이지 첫 사용자 인터랙션 시 BGM 자동 시작 (브라우저 자동재생 정책 준수)
-	// 토글 버튼이 ON 상태이면(기본 ON) 첫 클릭/키 입력 즉시 BGM fade in.
-	let bgmAutoStarted = false;
-	const tryStartBgm = () => {
-		if (bgmAutoStarted) return;
-		if (!JarvisFX._enabled || !JarvisFX._bgmEnabled) return;
-		bgmAutoStarted = true;
-		JarvisFX.startBgm();
-	};
-	// click / keydown / touchstart — 사용자 액션이면 자동재생 정책 통과
-	document.addEventListener("click", tryStartBgm, { once: true, capture: true });
-	document.addEventListener("keydown", tryStartBgm, { once: true, capture: true });
-	document.addEventListener("touchstart", tryStartBgm, { once: true, capture: true });
 })();

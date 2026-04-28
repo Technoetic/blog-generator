@@ -3,8 +3,9 @@
 // JARVIS 사이버 보이스 + 트랜스포머 메탈릭 SFX + 사이버 앰비언트 BGM
 class JarvisFX {
 	static _ctx = null;
-	static _enabled = (typeof localStorage !== "undefined") && localStorage.getItem("jarvisFxEnabled") !== "false";
-	static _bgmEnabled = (typeof localStorage !== "undefined") && localStorage.getItem("jarvisBgmEnabled") !== "false";
+	// 새로고침 시 항상 OFF로 시작 (localStorage 미사용 — 사용자가 매번 명시적으로 ON)
+	static _enabled = false;
+	static _bgmEnabled = false;
 	static _bgmNodes = null; // 활성 BGM 노드들 (정지용)
 	static _voiceAvailable = null; // 영어 보이스 존재 여부 캐시
 
@@ -23,9 +24,9 @@ class JarvisFX {
 	}
 
 	// 호환용: 외부에서 직접 호출 시 사용. 스위치 UI는 app.js의 toggleJarvis/toggleBgm()이 처리.
+	// 새로고침 시 항상 OFF로 시작하므로 localStorage 저장 안 함.
 	static toggle() {
 		JarvisFX._enabled = !JarvisFX._enabled;
-		localStorage.setItem("jarvisFxEnabled", JarvisFX._enabled);
 		const cb = document.getElementById("jarvisToggle");
 		if (cb) cb.checked = JarvisFX._enabled;
 		if (JarvisFX._enabled) JarvisFX.bassDrop();
@@ -35,7 +36,6 @@ class JarvisFX {
 
 	static toggleBgm() {
 		JarvisFX._bgmEnabled = !JarvisFX._bgmEnabled;
-		localStorage.setItem("jarvisBgmEnabled", JarvisFX._bgmEnabled);
 		const cb = document.getElementById("bgmToggle");
 		if (cb) cb.checked = JarvisFX._bgmEnabled;
 		if (JarvisFX._bgmEnabled) JarvisFX.startBgm();
