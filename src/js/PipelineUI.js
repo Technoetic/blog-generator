@@ -42,112 +42,49 @@ class JarvisFX {
 		return JarvisFX._bgmEnabled;
 	}
 
-	// 사이버 앰비언트 BGM: 4-layer drone + pad + pulse + filtered noise
-	// 매우 작은 음량 (-30dB)으로 백그라운드 분위기만
+	// Epic Cinematic BGM (Pixabay royalty-free MP3, Hans Zimmer 스타일)
+	// <audio id="bgmAudio" loop> 태그를 제어. 합성 노이즈가 아닌 진짜 영화 음악.
 	static startBgm() {
 		if (!JarvisFX._enabled || !JarvisFX._bgmEnabled) return;
-		if (JarvisFX._bgmNodes) return; // 이미 재생 중
-		const ctx = JarvisFX.ctx;
-		const t = ctx.currentTime;
-		const master = ctx.createGain();
-		master.gain.value = 0.18; // 전체 BGM 마스터 볼륨 (잔잔하게)
-		master.connect(ctx.destination);
-
-		// 1) Sub-bass drone — 40Hz + 41Hz beat (slow phase shift)
-		const drone1 = ctx.createOscillator();
-		drone1.type = "sine";
-		drone1.frequency.value = 40;
-		const drone2 = ctx.createOscillator();
-		drone2.type = "sine";
-		drone2.frequency.value = 41;
-		const droneGain = ctx.createGain();
-		droneGain.gain.value = 0.7;
-		drone1.connect(droneGain);
-		drone2.connect(droneGain);
-		droneGain.connect(master);
-		drone1.start(t);
-		drone2.start(t);
-
-		// 2) Pad layer — 200Hz triangle, LFO modulated
-		const pad = ctx.createOscillator();
-		pad.type = "triangle";
-		pad.frequency.value = 200;
-		const padGain = ctx.createGain();
-		padGain.gain.value = 0.0;
-		// LFO: 0.15Hz로 천천히 fade in/out
-		const lfo = ctx.createOscillator();
-		lfo.type = "sine";
-		lfo.frequency.value = 0.15;
-		const lfoGain = ctx.createGain();
-		lfoGain.gain.value = 0.05;
-		lfo.connect(lfoGain).connect(padGain.gain);
-		// 기본 게인 0.05 + LFO modulation
-		padGain.gain.value = 0.05;
-		pad.connect(padGain).connect(master);
-		pad.start(t);
-		lfo.start(t);
-
-		// 3) High pad — 600Hz triangle, octave 위 (분위기 톤)
-		const highPad = ctx.createOscillator();
-		highPad.type = "sine";
-		highPad.frequency.value = 600;
-		const highPadGain = ctx.createGain();
-		highPadGain.gain.value = 0.025;
-		highPad.connect(highPadGain).connect(master);
-		highPad.start(t);
-
-		// 4) Filtered noise (공기감, atmospheric)
-		const buf = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
-		const data = buf.getChannelData(0);
-		for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-		const noise = ctx.createBufferSource();
-		noise.buffer = buf;
-		noise.loop = true;
-		const noiseFilter = ctx.createBiquadFilter();
-		noiseFilter.type = "lowpass";
-		noiseFilter.frequency.value = 200;
-		const noiseGain = ctx.createGain();
-		noiseGain.gain.value = 0.05;
-		noise.connect(noiseFilter).connect(noiseGain).connect(master);
-		noise.start(t);
-
-		// 5) 주기적 시스템 ping (5초마다 880Hz square 짧게 — 시스템 동작감)
-		const pingInterval = setInterval(() => {
-			if (!JarvisFX._bgmNodes) return;
-			const pt = ctx.currentTime;
-			const ping = ctx.createOscillator();
-			ping.type = "sine";
-			ping.frequency.value = 1200;
-			const pingGain = ctx.createGain();
-			pingGain.gain.setValueAtTime(0.001, pt);
-			pingGain.gain.exponentialRampToValueAtTime(0.04, pt + 0.02);
-			pingGain.gain.exponentialRampToValueAtTime(0.001, pt + 0.15);
-			ping.connect(pingGain).connect(master);
-			ping.start(pt);
-			ping.stop(pt + 0.16);
-		}, 5000);
-
+		const audio = document.getElementById("bgmAudio");
+		if (!audio) return;
+		audio.volume = 0; // fade in 시작
+		audio.loop = true;
+		const playPromise = audio.play();
+		if (playPromise) {
+			playPromise.catch((e) => console.warn("[BGM] autoplay blocked:", e.message));
+		}
 		// fade in 2초
-		master.gain.setValueAtTime(0.001, t);
-		master.gain.exponentialRampToValueAtTime(0.18, t + 2.0);
-
-		JarvisFX._bgmNodes = { drone1, drone2, pad, lfo, highPad, noise, master, pingInterval };
+		const targetVol = 0.35;
+		const steps = 40;
+		const dt = 50;
+		let step = 0;
+		clearInterval(JarvisFX._bgmFadeTimer);
+		JarvisFX._bgmFadeTimer = setInterval(() => {
+			step++;
+			audio.volume = Math.min(targetVol, (targetVol * step) / steps);
+			if (step >= steps) clearInterval(JarvisFX._bgmFadeTimer);
+		}, dt);
 	}
 
 	static stopBgm() {
-		if (!JarvisFX._bgmNodes) return;
-		const { drone1, drone2, pad, lfo, highPad, noise, master, pingInterval } = JarvisFX._bgmNodes;
-		const ctx = JarvisFX.ctx;
-		const t = ctx.currentTime;
-		// fade out 1.5초
-		master.gain.cancelScheduledValues(t);
-		master.gain.setValueAtTime(master.gain.value, t);
-		master.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
-		setTimeout(() => {
-			try { drone1.stop(); drone2.stop(); pad.stop(); lfo.stop(); highPad.stop(); noise.stop(); } catch (e) {}
-		}, 1600);
-		clearInterval(pingInterval);
-		JarvisFX._bgmNodes = null;
+		const audio = document.getElementById("bgmAudio");
+		if (!audio) return;
+		// fade out 1.5초 후 pause
+		const startVol = audio.volume;
+		const steps = 30;
+		const dt = 50;
+		let step = 0;
+		clearInterval(JarvisFX._bgmFadeTimer);
+		JarvisFX._bgmFadeTimer = setInterval(() => {
+			step++;
+			audio.volume = Math.max(0, startVol * (1 - step / steps));
+			if (step >= steps) {
+				clearInterval(JarvisFX._bgmFadeTimer);
+				audio.pause();
+				audio.currentTime = 0;
+			}
+		}, dt);
 	}
 
 	// 메탈릭 transform 사운드 (트랜스포머 변신음)

@@ -26,4 +26,15 @@ for js_file in js_order:
 with open(f'{dist}/index.html', 'w', encoding='utf-8', newline='\n') as f:
     f.write(html)
 
+# 정적 자산 복사 (mp3/이미지 등 인라인 불가능한 파일)
+import shutil
+src_assets = f'{src}/assets'
+if os.path.isdir(src_assets):
+    dist_assets = f'{dist}/assets'
+    if os.path.exists(dist_assets):
+        shutil.rmtree(dist_assets)
+    shutil.copytree(src_assets, dist_assets)
+    asset_count = len(os.listdir(dist_assets))
+    print(f'dist/assets/ ({asset_count} files)')
+
 print(f'dist/index.html ({len(html):,} chars)')

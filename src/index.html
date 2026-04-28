@@ -10,7 +10,11 @@
 <body>
   <div class="container">
     <button type="button" class="jarvis-toggle" id="jarvisToggle" onclick="toggleJarvis()" title="JARVIS SFX + Voice 토글">🔊 SFX ON</button>
-    <button type="button" class="jarvis-toggle bgm-toggle-btn" id="bgmToggle" onclick="toggleBgm()" title="사이버 앰비언트 BGM 토글">🎵 BGM ON</button>
+    <button type="button" class="jarvis-toggle bgm-toggle-btn" id="bgmToggle" onclick="toggleBgm()" title="Epic Cinematic BGM 토글">🎵 BGM ON</button>
+    <!-- Epic cinematic BGM (Pixabay royalty-free, Hans Zimmer 스타일) -->
+    <audio id="bgmAudio" preload="auto" loop>
+      <source src="assets/bgm-epic-cinematic.mp3" type="audio/mpeg">
+    </audio>
     <h1>비유 블로그 생성기</h1>
     <p class="subtitle">6-Agent 오케스트레이션 × 실시간 웹 검색 × 손그림 다이어그램 × 자동 발행</p>
 
