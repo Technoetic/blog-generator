@@ -43,49 +43,106 @@ class JarvisFX {
 		return JarvisFX._bgmEnabled;
 	}
 
-	// Epic Cinematic BGM (Pixabay royalty-free MP3, Hans Zimmer 스타일)
-	// <audio id="bgmAudio" loop> 태그를 제어. 합성 노이즈가 아닌 진짜 영화 음악.
-	static startBgm() {
+	// Epic Cinematic BGM — Web Audio API 듀얼 BufferSource crossfade로 끝-시작 단절 제거
+	// 이전 <audio loop> 한계: mp3 silence padding + 즉시 재시작 → 단절 발생
+	// 새 방식: 트랙 끝나기 4초 전 새 인스턴스 fade in, 동시에 현재 인스턴스 fade out → 무한 매끄럽게 이어짐
+	static BGM_TARGET_VOL = 0.30;
+	static BGM_CROSSFADE_SEC = 4; // 끝나기 4초 전 crossfade 시작
+	static BGM_TRIM_HEAD_SEC = 0.05; // 시작 silence 0.05s skip
+	static BGM_TRIM_TAIL_SEC = 0.1;  // 끝 silence 0.1s 일찍 cut
+
+	static async _ensureBgmBuffer() {
+		if (JarvisFX._bgmBuffer) return JarvisFX._bgmBuffer;
+		const url = "assets/bgm-epic-cinematic.mp3";
+		const ab = await fetch(url).then((r) => r.arrayBuffer());
+		const buf = await JarvisFX.ctx.decodeAudioData(ab);
+		JarvisFX._bgmBuffer = buf;
+		return buf;
+	}
+
+	static async startBgm() {
 		if (!JarvisFX._enabled || !JarvisFX._bgmEnabled) return;
-		const audio = document.getElementById("bgmAudio");
-		if (!audio) return;
-		audio.volume = 0; // fade in 시작
-		audio.loop = true;
-		const playPromise = audio.play();
-		if (playPromise) {
-			playPromise.catch((e) => console.warn("[BGM] autoplay blocked:", e.message));
+		if (JarvisFX._bgmActive) return; // 이미 재생 중
+		JarvisFX._bgmActive = true;
+		const ctx = JarvisFX.ctx;
+		try {
+			const buffer = await JarvisFX._ensureBgmBuffer();
+			JarvisFX._bgmStarted = ctx.currentTime;
+			JarvisFX._bgmTrackDuration = buffer.duration - JarvisFX.BGM_TRIM_HEAD_SEC - JarvisFX.BGM_TRIM_TAIL_SEC;
+			JarvisFX._scheduleNextBgm(buffer, ctx.currentTime, true /* fade in 2초 */);
+		} catch (e) {
+			console.warn("[BGM] start failed:", e.message);
+			JarvisFX._bgmActive = false;
 		}
-		// fade in 2초 (Voice/SFX와 균형 잡힌 음량)
-		const targetVol = 0.30;
-		const steps = 40;
-		const dt = 50;
-		let step = 0;
-		clearInterval(JarvisFX._bgmFadeTimer);
-		JarvisFX._bgmFadeTimer = setInterval(() => {
-			step++;
-			audio.volume = Math.min(targetVol, (targetVol * step) / steps);
-			if (step >= steps) clearInterval(JarvisFX._bgmFadeTimer);
-		}, dt);
+	}
+
+	// 한 트랙 인스턴스 시작 + 다음 인스턴스 예약
+	static _scheduleNextBgm(buffer, startAt, isFirst) {
+		if (!JarvisFX._bgmActive) return;
+		const ctx = JarvisFX.ctx;
+		const fadeInDur = isFirst ? 2.0 : JarvisFX.BGM_CROSSFADE_SEC;
+		const trimHead = JarvisFX.BGM_TRIM_HEAD_SEC;
+		const playableDur = buffer.duration - trimHead - JarvisFX.BGM_TRIM_TAIL_SEC;
+
+		// 새 BufferSource + Gain 노드
+		const src = ctx.createBufferSource();
+		src.buffer = buffer;
+		const gain = ctx.createGain();
+		src.connect(gain).connect(ctx.destination);
+
+		// fade in
+		gain.gain.setValueAtTime(0.0001, startAt);
+		gain.gain.linearRampToValueAtTime(JarvisFX.BGM_TARGET_VOL, startAt + fadeInDur);
+		// fade out (마지막 BGM_CROSSFADE_SEC 동안)
+		const fadeOutStart = startAt + playableDur - JarvisFX.BGM_CROSSFADE_SEC;
+		gain.gain.setValueAtTime(JarvisFX.BGM_TARGET_VOL, fadeOutStart);
+		gain.gain.linearRampToValueAtTime(0.0001, startAt + playableDur);
+
+		// 시작 (trim head로 silence 회피)
+		src.start(startAt, trimHead);
+		src.stop(startAt + playableDur + 0.05);
+
+		// 활성 노드 추적 (정지 시 모두 중단)
+		JarvisFX._bgmNodes = JarvisFX._bgmNodes || [];
+		JarvisFX._bgmNodes.push({ src, gain });
+
+		// 다음 인스턴스 — 현재 fade out 시작 시점에 동시 fade in
+		const nextStartAt = fadeOutStart;
+		const ms = Math.max(0, (nextStartAt - ctx.currentTime - 0.5) * 1000);
+		JarvisFX._bgmNextTimer = setTimeout(() => {
+			if (!JarvisFX._bgmActive) return;
+			JarvisFX._scheduleNextBgm(buffer, nextStartAt, false /* crossfade */);
+			// 오래된 노드 정리 (10초 후)
+			setTimeout(() => {
+				JarvisFX._bgmNodes = (JarvisFX._bgmNodes || []).slice(-2);
+			}, 10000);
+		}, ms);
 	}
 
 	static stopBgm() {
-		const audio = document.getElementById("bgmAudio");
-		if (!audio) return;
-		// fade out 1.5초 후 pause
-		const startVol = audio.volume;
-		const steps = 30;
-		const dt = 50;
-		let step = 0;
-		clearInterval(JarvisFX._bgmFadeTimer);
-		JarvisFX._bgmFadeTimer = setInterval(() => {
-			step++;
-			audio.volume = Math.max(0, startVol * (1 - step / steps));
-			if (step >= steps) {
-				clearInterval(JarvisFX._bgmFadeTimer);
+		if (!JarvisFX._bgmActive) {
+			// 호환: 이전 <audio> 태그 잔여 정지
+			const audio = document.getElementById("bgmAudio");
+			if (audio && !audio.paused) {
 				audio.pause();
 				audio.currentTime = 0;
 			}
-		}, dt);
+			return;
+		}
+		JarvisFX._bgmActive = false;
+		clearTimeout(JarvisFX._bgmNextTimer);
+		const ctx = JarvisFX.ctx;
+		const t = ctx.currentTime;
+		// 모든 활성 노드 fade out 1.5초
+		(JarvisFX._bgmNodes || []).forEach(({ src, gain }) => {
+			try {
+				gain.gain.cancelScheduledValues(t);
+				gain.gain.setValueAtTime(gain.gain.value, t);
+				gain.gain.linearRampToValueAtTime(0.0001, t + 1.5);
+				setTimeout(() => { try { src.stop(); } catch (e) {} }, 1600);
+			} catch (e) {}
+		});
+		setTimeout(() => { JarvisFX._bgmNodes = []; }, 1700);
 	}
 
 	// 메탈릭 transform 사운드 (트랜스포머 변신음)
