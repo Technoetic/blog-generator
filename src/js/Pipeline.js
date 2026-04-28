@@ -229,7 +229,8 @@ class Pipeline {
 				],
 				{
 					// Claude Haiku 4.5: 자기검증 편향 제거 + 한국어 자연성 평가에 강함.
-					model: "anthropic/claude-haiku-4-5",
+					// BizRouter ID는 점 구분자 사용 (claude-haiku-4.5, NOT claude-haiku-4-5).
+					model: "anthropic/claude-haiku-4.5",
 					thinking_budget: 1024,
 					temperature: 0.0,
 					schema_name: "title_judge",
