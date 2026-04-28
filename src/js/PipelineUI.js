@@ -186,30 +186,24 @@ class JarvisFX {
 		setTimeout(() => JarvisFX._playSfx("bassdrop", { volume: 0.5 }), 200);
 	}
 
-	// 동굴급 ConvolutionReverb IR — 3.5초 긴 tail, 천천히 사라짐
-	// 큰 동굴/대성당 공간감 (Hans Zimmer 영화 톤)
+	// 영화급 reverb IR — 2.5초 tail, 적절한 공간감 (이전 3.5초는 늘어짐)
 	static _getReverbIR() {
 		if (JarvisFX._reverbIR) return JarvisFX._reverbIR;
 		const ctx = JarvisFX.ctx;
 		const sr = ctx.sampleRate;
-		const len = Math.floor(sr * 3.5); // 3.5초 동굴 tail (이전 1.5초)
+		const len = Math.floor(sr * 2.5); // 2.5초 (이전 3.5 → 늘어짐 줄임)
 		const ir = ctx.createBuffer(2, len, sr);
 		for (let ch = 0; ch < 2; ch++) {
 			const data = ir.getChannelData(ch);
-			// Early reflection 강화 (첫 100ms 강한 반사)
-			const earlyLen = Math.floor(sr * 0.1);
+			const earlyLen = Math.floor(sr * 0.08);
 			for (let i = 0; i < len; i++) {
 				const t = i / len;
-				// decay 곡선: 처음엔 천천히, 뒤로 갈수록 부드럽게 (1.8 지수 — 이전 2.5보다 완만)
-				const decay = Math.pow(1 - t, 1.8);
+				// decay 지수 2.0 — 적당히 빠른 감쇠 (이전 1.8보다 깔끔)
+				const decay = Math.pow(1 - t, 2.0);
 				let sample = (Math.random() * 2 - 1) * decay;
-				// 첫 100ms 동안 + early reflection burst (반사 패턴)
-				if (i < earlyLen) {
-					sample *= 1 + Math.sin(i * 0.1) * 0.3;
-				}
-				// 좌우 채널 살짝 다르게 (stereo 폭)
+				if (i < earlyLen) sample *= 1 + Math.sin(i * 0.1) * 0.3;
 				if (ch === 1) sample *= 0.92;
-				data[i] = sample * 0.7; // 클리핑 방지
+				data[i] = sample * 0.7;
 			}
 		}
 		JarvisFX._reverbIR = ir;
@@ -227,69 +221,88 @@ class JarvisFX {
 		const playBuf = (buf) => {
 			const src = ctx.createBufferSource();
 			src.buffer = buf;
-			src.playbackRate.value = opts.rate || 0.80; // 더 느리고 무겁게 (베이스 자연 강조 강화)
+			src.playbackRate.value = opts.rate || 0.92; // 정상에 가깝게 (이전 0.80은 늘어짐)
 
-			// 1) Highpass — 50Hz 이하만 컷 (sub-bass 더 살림)
+			// 1) Highpass — 60Hz (이전 50 → 60Hz로 럼블 더 컷)
 			const hp = ctx.createBiquadFilter();
 			hp.type = "highpass";
-			hp.frequency.value = 50;
+			hp.frequency.value = 60;
 			hp.Q.value = 0.7;
 
-			// 2) Sub-bass shelf @ 80Hz +9dB — 가슴 울리는 저주파 강화 (이전 +5)
+			// 2) Sub-bass shelf @ 80Hz +5dB — 베이스 존재감 (이전 +9 → 먹먹 회피)
 			const subShelf = ctx.createBiquadFilter();
 			subShelf.type = "lowshelf";
 			subShelf.frequency.value = 80;
-			subShelf.gain.value = 9;
+			subShelf.gain.value = 5;
 
-			// 3) Low-mid peaking @ 150Hz +6dB Q0.8 — 흉성 (chest voice) 강조
-			const lowMid = ctx.createBiquadFilter();
-			lowMid.type = "peaking";
-			lowMid.frequency.value = 150;
-			lowMid.Q.value = 0.8;
-			lowMid.gain.value = 6;
+			// 3) Low-mid 컷 @ 250Hz -2dB Q1.0 — 머디(muddy) 영역 컷 (먹먹 핵심 원인)
+			const muddyCut = ctx.createBiquadFilter();
+			muddyCut.type = "peaking";
+			muddyCut.frequency.value = 250;
+			muddyCut.Q.value = 1.0;
+			muddyCut.gain.value = -2;
 
-			// 4) Low shelf @ 250Hz +10dB — 영화 내레이터 깊은 베이스 (이전 +8 @ 200Hz)
+			// 4) Vocal clarity peak @ 2500Hz +4dB Q1.2 — 자음/명료도 (Mid 강화 핵심)
+			const clarity = ctx.createBiquadFilter();
+			clarity.type = "peaking";
+			clarity.frequency.value = 2500;
+			clarity.Q.value = 1.2;
+			clarity.gain.value = 4;
+
+			// 5) Presence peak @ 5000Hz +3dB Q1.0 — 공기감/디테일 (멋있는 톤)
+			const presence = ctx.createBiquadFilter();
+			presence.type = "peaking";
+			presence.frequency.value = 5000;
+			presence.Q.value = 1.0;
+			presence.gain.value = 3;
+
+			// 6) Low shelf @ 200Hz +4dB — 베이스 존재감 (이전 +10 → 먹먹 회피)
 			const lowShelf = ctx.createBiquadFilter();
 			lowShelf.type = "lowshelf";
-			lowShelf.frequency.value = 250;
-			lowShelf.gain.value = 10;
+			lowShelf.frequency.value = 200;
+			lowShelf.gain.value = 4;
 
-			// 5) Peaking @ 3000Hz +2dB — presence 유지
-			const peak = ctx.createBiquadFilter();
-			peak.type = "peaking";
-			peak.frequency.value = 3000;
-			peak.Q.value = 1.0;
-			peak.gain.value = 2;
+			// 7) Saturation — 살짝 따스함 + 임팩트 (+2dB 효과)
+			const sat = ctx.createWaveShaper();
+			const curve = new Float32Array(2048);
+			for (let i = 0; i < 2048; i++) {
+				const x = (i / 1024) - 1;
+				curve[i] = Math.tanh(x * 1.3); // 부드러운 saturation
+			}
+			sat.curve = curve;
+			sat.oversample = "2x";
 
-			// 5) Pre-delay 80ms — 큰 공간 반사 지연 (동굴 공간감)
+			// 8) Pre-delay 50ms (이전 80 → 50, 너무 큰 공간감 줄임)
 			const preDelay = ctx.createDelay(0.5);
-			preDelay.delayTime.value = 0.08;
+			preDelay.delayTime.value = 0.05;
 
-			// 6) Convolution Reverb — 동굴 3.5초 tail
+			// 9) Convolution Reverb — 2.5초 tail
 			const reverb = ctx.createConvolver();
 			reverb.buffer = JarvisFX._getReverbIR();
 
-			// 7) Dry/Wet 믹싱 (dry 60% + wet 40% — 동굴 효과 강조)
+			// 10) Dry/Wet (dry 72% + wet 28% — 늘어짐 줄이고 명료도 우선)
 			const dryGain = ctx.createGain();
-			dryGain.gain.value = 0.60;
+			dryGain.gain.value = 0.72;
 			const wetGain = ctx.createGain();
-			wetGain.gain.value = 0.40;
+			wetGain.gain.value = 0.28;
 
-			// 8) Master gain — 음량 살짝 키움 (0.55 → 0.65)
+			// 11) Master gain — 0.65 그대로
 			const masterGain = ctx.createGain();
 			masterGain.gain.value = opts.volume || 0.65;
 
-			// 라우팅: src → HP → SubShelf → LowMid → LowShelf → Peak
-			//                                                  ├─ dry → master
-			//                                                  └─ preDelay → Reverb → wet → master
+			// 라우팅: src → HP → SubShelf → MuddyCut → Clarity → Presence → LowShelf → Saturation
+			//                                                                       ├─ dry → master
+			//                                                                       └─ preDelay → Reverb → wet → master
 			src.connect(hp);
 			hp.connect(subShelf);
-			subShelf.connect(lowMid);
-			lowMid.connect(lowShelf);
-			lowShelf.connect(peak);
-			peak.connect(dryGain);
+			subShelf.connect(muddyCut);
+			muddyCut.connect(clarity);
+			clarity.connect(presence);
+			presence.connect(lowShelf);
+			lowShelf.connect(sat);
+			sat.connect(dryGain);
 			dryGain.connect(masterGain);
-			peak.connect(preDelay);
+			sat.connect(preDelay);
 			preDelay.connect(reverb);
 			reverb.connect(wetGain);
 			wetGain.connect(masterGain);
