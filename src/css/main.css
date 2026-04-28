@@ -856,14 +856,16 @@ select option {
 	opacity: 1;
 }
 
-/* 비용 진행 막대 + 마일스톤 */
+/* 비용 진행 막대 + 마일스톤 (라벨은 막대 위쪽에 배치, 잘림 방지) */
 .cost-progress {
 	position: relative;
+	padding-top: 18px;     /* 위쪽에 라벨 자리 확보 */
+	padding-bottom: 6px;   /* 아래 여백 */
 }
 .cost-bar-track {
 	position: relative;
 	width: 100%;
-	height: 8px;
+	height: 6px;
 	background: rgba(255, 255, 255, 0.06);
 	border: 1px solid rgba(255, 255, 255, 0.08);
 	border-radius: 999px;
@@ -877,33 +879,47 @@ select option {
 	background: linear-gradient(90deg, #4ade80 0%, #22d3ee 50%, #a78bfa 100%);
 	border-radius: 999px;
 	transition: width 0.8s cubic-bezier(0.34, 1.4, 0.64, 1);
-	box-shadow: 0 0 12px rgba(34, 211, 238, 0.5);
+	box-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
 }
 .cost-milestone {
 	position: absolute;
-	top: -4px;
+	top: -3px;
 	transform: translateX(-50%);
-	width: 16px;
-	height: 16px;
+	width: 12px;
+	height: 12px;
 	background: rgba(255, 255, 255, 0.2);
 	border: 2px solid rgba(255, 255, 255, 0.4);
 	border-radius: 50%;
 	transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
+/* 마일스톤 라벨 — 막대 위쪽에 배치 (이전: 아래 → 잘림 / 이후: 위 → 안전) */
 .cost-milestone span {
 	position: absolute;
-	top: 18px;
+	bottom: 18px;          /* 노드 위쪽 */
 	left: 50%;
 	transform: translateX(-50%);
 	font-size: 10px;
-	color: rgba(255, 255, 255, 0.4);
-	font-weight: 600;
+	color: rgba(255, 255, 255, 0.5);
+	font-weight: 700;
 	white-space: nowrap;
+	letter-spacing: 0.3px;
+	font-feature-settings: "tnum";
+}
+/* 마지막 마일스톤(₩1K, left:100%) 라벨이 우측으로 튀어나가지 않게 */
+.cost-milestone:last-child span {
+	left: auto;
+	right: 0;
+	transform: none;
+}
+/* 첫 마일스톤(₩100, left:10%) 라벨도 안전하게 (left가 너무 작으면 좌측 잘림) */
+.cost-milestone:first-child span {
+	left: 0;
+	transform: none;
 }
 .cost-milestone.reached {
 	background: linear-gradient(135deg, #ffd166, #f97316);
 	border-color: #ffd166;
-	box-shadow: 0 0 16px rgba(255, 209, 102, 0.7);
+	box-shadow: 0 0 14px rgba(255, 209, 102, 0.7);
 	animation: milestone-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .cost-milestone.reached span {
