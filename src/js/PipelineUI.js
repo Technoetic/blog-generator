@@ -206,9 +206,9 @@ class JarvisFX {
 		return ir;
 	}
 
-	// JARVIS/스타크래프트/트랜스포머 메카닉 보이스 처리 + Reverb 공간감
-	// 처리 체인: rate → HP 150 → BP 1500 → Peak +6 → Distortion → [Dry + Wet(Reverb)] → Master gain
-	// BGM과 같은 공간(큰 홀)에 있는 듯한 reverb tail로 "겉도는" 느낌 제거.
+	// SF 영화 톤 보이스 처리 (Brian 영국 남성 다큐멘터리 보이스 + 미니멀 후처리)
+	// Brian이 이미 깊고 멋있는 톤이라 distortion/bandpass 빼고 reverb + 살짝 EQ만.
+	// 처리 체인: rate → HP 100 → Peak +3 → [Dry + Wet(Reverb)] → Master gain
 	static voicePlay(key, opts = {}) {
 		if (!JarvisFX._enabled) return;
 		const ctx = JarvisFX.ctx;
@@ -217,61 +217,48 @@ class JarvisFX {
 		const playBuf = (buf) => {
 			const src = ctx.createBufferSource();
 			src.buffer = buf;
-			src.playbackRate.value = opts.rate || 0.92;
+			src.playbackRate.value = opts.rate || 0.95; // 거의 원래 속도 (Brian은 이미 천천히 말함)
 
-			// 1) Highpass — 저음 럼블 컷
+			// 1) Highpass — 저음 럼블만 약하게 컷 (Brian의 깊은 베이스 보존)
 			const hp = ctx.createBiquadFilter();
 			hp.type = "highpass";
-			hp.frequency.value = 150;
+			hp.frequency.value = 80;
 			hp.Q.value = 0.7;
 
-			// 2) Bandpass — 라디오 통신 톤
-			const bp = ctx.createBiquadFilter();
-			bp.type = "bandpass";
-			bp.frequency.value = 1500;
-			bp.Q.value = 0.9;
+			// 2) Low shelf @ 200Hz +3dB — 베이스 부각 (영화 내레이터 톤)
+			const lowShelf = ctx.createBiquadFilter();
+			lowShelf.type = "lowshelf";
+			lowShelf.frequency.value = 200;
+			lowShelf.gain.value = 3;
 
-			// 3) Peaking @ 2500Hz +5dB — presence
+			// 3) Peaking @ 3000Hz +2dB — presence 살짝 (명료도 유지)
 			const peak = ctx.createBiquadFilter();
 			peak.type = "peaking";
-			peak.frequency.value = 2500;
-			peak.Q.value = 1.2;
-			peak.gain.value = 5;
+			peak.frequency.value = 3000;
+			peak.Q.value = 1.0;
+			peak.gain.value = 2;
 
-			// 4) WaveShaper distortion — metallic
-			const dist = ctx.createWaveShaper();
-			const curve = new Float32Array(2048);
-			for (let i = 0; i < 2048; i++) {
-				const x = (i / 1024) - 1;
-				curve[i] = Math.tanh(x * 3.5); // 약간 줄임 (4 → 3.5)
-			}
-			dist.curve = curve;
-			dist.oversample = "4x";
-
-			// 5) Convolution Reverb — BGM과 같은 공간감 (1.5초 tail)
+			// 4) Convolution Reverb — SF 영화 공간감 (1.5초 tail)
 			const reverb = ctx.createConvolver();
 			reverb.buffer = JarvisFX._getReverbIR();
 
-			// 6) Dry/Wet 믹싱 (dry 65% + wet 35%)
+			// 5) Dry/Wet 믹싱 (dry 75% + wet 25% — Brian 음성 명료도 유지)
 			const dryGain = ctx.createGain();
-			dryGain.gain.value = 0.65;
+			dryGain.gain.value = 0.75;
 			const wetGain = ctx.createGain();
-			wetGain.gain.value = 0.35;
+			wetGain.gain.value = 0.25;
 
-			// 7) Master gain — BGM과 자연스럽게 묻히도록 0.55 → 0.38
+			// 6) Master gain
 			const masterGain = ctx.createGain();
-			masterGain.gain.value = opts.volume || 0.38;
+			masterGain.gain.value = opts.volume || 0.42;
 
-			// 라우팅: src → 처리체인 → split → (dry / reverb→wet) → master → out
+			// 라우팅
 			src.connect(hp);
-			hp.connect(bp);
-			bp.connect(peak);
-			peak.connect(dist);
-			// dry 분기
-			dist.connect(dryGain);
+			hp.connect(lowShelf);
+			lowShelf.connect(peak);
+			peak.connect(dryGain);
 			dryGain.connect(masterGain);
-			// wet (reverb) 분기 → BGM과 같은 공간감
-			dist.connect(reverb);
+			peak.connect(reverb);
 			reverb.connect(wetGain);
 			wetGain.connect(masterGain);
 			masterGain.connect(ctx.destination);
