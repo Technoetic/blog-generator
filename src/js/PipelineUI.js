@@ -168,8 +168,8 @@ class JarvisFX {
 		}).catch((e) => console.warn(`[SFX] ${key}.mp3 load fail:`, e.message));
 	}
 
-	// 트랜스포머 메탈 변신음 (Mixkit "Mechanical brush transition")
-	static transform()  { JarvisFX._playSfx("transform", { volume: 0.6 }); }
+	// Phase 진행 클릭 (Mixkit "Sci fi click" — 1.27초 짧고 깔끔, BGM과 충돌 없음)
+	static transform()  { JarvisFX._playSfx("transform", { volume: 0.4 }); }
 	// 아이언맨 베이스 드롭 (Mixkit "Apocalyptic stomp impact")
 	static bassDrop()   { JarvisFX._playSfx("bassdrop",  { volume: 0.7 }); }
 	// HUD 락온 확인음 (Mixkit "Sci Fi confirmation")
