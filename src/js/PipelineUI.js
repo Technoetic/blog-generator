@@ -54,8 +54,8 @@ class JarvisFX {
 		if (playPromise) {
 			playPromise.catch((e) => console.warn("[BGM] autoplay blocked:", e.message));
 		}
-		// fade in 2초
-		const targetVol = 0.35;
+		// fade in 2초 (잔잔하게 — SFX/Voice가 위에서 들릴 수 있게)
+		const targetVol = 0.18;
 		const steps = 40;
 		const dt = 50;
 		let step = 0;
@@ -240,33 +240,76 @@ class JarvisFX {
 		});
 	}
 
-	// JARVIS 보이스: 영어 남성 강제 / 깊은 robotic 톤
-	// 영어 보이스 없으면 한국 보이스로 영어 읽지 않고 그냥 SFX만 재생 (한국식 영어 발음 방지)
-	static voice(text, opts = {}) {
+	// JARVIS 보이스: 사전 녹음 mp3 (영어) + Web Audio 로보틱 처리
+	// (Google Translate TTS로 사전 생성한 깨끗한 영어 발음 → playbackRate + lowshelf EQ로 robotic 톤)
+	// key: assets/voice/{key}.mp3 파일명
+	static voicePlay(key, opts = {}) {
 		if (!JarvisFX._enabled) return;
-		if (!window.speechSynthesis) return;
-		const voices = speechSynthesis.getVoices();
-		// 영어 보이스만 필터링
-		const englishOnly = voices.filter((v) => /^en[-_]/i.test(v.lang));
-		if (englishOnly.length === 0) {
-			console.warn("[JARVIS] No English voice installed — voice skipped");
+		const ctx = JarvisFX.ctx;
+		const url = `assets/voice/${key}.mp3`;
+		// 캐시
+		JarvisFX._voiceBuf = JarvisFX._voiceBuf || {};
+		const playBuf = (buf) => {
+			const src = ctx.createBufferSource();
+			src.buffer = buf;
+			src.playbackRate.value = opts.rate || 0.88; // 천천히 = 더 낮은 톤 + 권위감
+			// EQ: 저음 부각(JARVIS 깊은 톤) + 고음 약간 깎음
+			const lowShelf = ctx.createBiquadFilter();
+			lowShelf.type = "lowshelf";
+			lowShelf.frequency.value = 250;
+			lowShelf.gain.value = 4; // +4dB 저음 부스트
+			const highShelf = ctx.createBiquadFilter();
+			highShelf.type = "highshelf";
+			highShelf.frequency.value = 4000;
+			highShelf.gain.value = -3; // 고음 약간 컷
+			// 약간의 distortion (waveshaper)으로 metallic 느낌
+			const dist = ctx.createWaveShaper();
+			const curve = new Float32Array(2048);
+			for (let i = 0; i < 2048; i++) {
+				const x = (i / 1024) - 1;
+				curve[i] = Math.tanh(x * 1.5); // 부드러운 saturation
+			}
+			dist.curve = curve;
+			dist.oversample = "2x";
+			const gain = ctx.createGain();
+			gain.gain.value = opts.volume || 1.4; // BGM 위에서 잘 들리게 (BGM 0.22 vs voice 1.4)
+			src.connect(lowShelf).connect(highShelf).connect(dist).connect(gain).connect(ctx.destination);
+			src.start();
+		};
+		if (JarvisFX._voiceBuf[key]) {
+			playBuf(JarvisFX._voiceBuf[key]);
 			return;
 		}
-		// 우선순위: macOS Daniel > Windows 남성 > UK > US 일반
-		const preferred = englishOnly.find((v) => /Daniel/i.test(v.name))
-			|| englishOnly.find((v) => /Microsoft Mark|Microsoft Guy|Microsoft David|Microsoft Ryan/i.test(v.name))
-			|| englishOnly.find((v) => /Alex|James|Oliver|Arthur/i.test(v.name))
-			|| englishOnly.find((v) => /Male/i.test(v.name))
-			|| englishOnly.find((v) => /UK|GB/i.test(v.lang))
-			|| englishOnly[0];
-		const u = new SpeechSynthesisUtterance(text);
-		u.voice = preferred;
-		u.lang = preferred.lang || "en-US";
-		u.rate = opts.rate || 0.88;   // 천천히 (권위감)
-		u.pitch = opts.pitch || 0.7;  // 더 낮게 (robotic JARVIS 톤)
-		u.volume = opts.volume || 0.85;
-		speechSynthesis.cancel();
-		speechSynthesis.speak(u);
+		fetch(url).then((r) => r.arrayBuffer()).then((ab) => ctx.decodeAudioData(ab)).then((buf) => {
+			JarvisFX._voiceBuf[key] = buf;
+			playBuf(buf);
+		}).catch((e) => console.warn(`[Voice] ${key}.mp3 load fail:`, e.message));
+	}
+
+	// 호환: 이전 voice(text) 호출 → 텍스트 → key 매핑
+	static voice(text, opts = {}) {
+		const map = {
+			"System online.": "system_online",
+			"System online": "system_online",
+			"Scanning topic.": "scanning",
+			"Topic locked.": "topic_locked",
+			"Forging analogy.": "forging",
+			"Analogy ready.": "analogy_ready",
+			"Parallel agents online.": "parallel_online",
+			"Composition complete.": "composition",
+			"Validating.": "scanning", // 재사용
+			"Validation passed.": "validation_passed",
+			"Fact check.": "scanning",
+			"Facts verified.": "facts_verified",
+			"Rendering visuals.": "scanning",
+			"Visuals deployed.": "visuals_deployed",
+			"Quality scan.": "scanning",
+			"All systems nominal.": "systems_nominal",
+			"Deploying.": "scanning",
+			"Mission complete.": "mission_complete",
+		};
+		const key = map[text.trim()] || (text.toLowerCase().includes("retry") ? "retry_engaged" : null);
+		if (key) JarvisFX.voicePlay(key, opts);
 	}
 }
 
