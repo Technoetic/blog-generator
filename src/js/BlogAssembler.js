@@ -394,9 +394,11 @@ class BlogAssembler {
 				inner.length <= 8 &&
 				(/^[A-Z]+$/.test(inner) || /^[A-Z][a-z]+$/.test(inner));
 			const isLabel = (hasHangul && !looksLikeCode) || isShortEngAcronym;
+			// 폰트 순서 핵심: 한글 명시 폰트(Malgun Gothic 등)를 generic 'monospace' 앞에 배치.
+			// 'monospace' generic 키워드를 만나면 OS 한글 fallback이 바탕체(Batang)로 매칭되는 함정 회피.
 			const style = isLabel
 				? "background:#f1f3f5;color:#495057;padding:1px 6px;border-radius:4px;font-family:inherit;font-weight:600;"
-				: "font-family:'Consolas','Monaco',monospace,'Malgun Gothic','Apple SD Gothic Neo','Noto Sans KR',sans-serif;";
+				: "font-family:'Consolas','Monaco','Malgun Gothic','Apple SD Gothic Neo','Noto Sans KR','Nanum Gothic',monospace,sans-serif;";
 			return `<code${attrs || ""} style="${style}">${inner}</code>`;
 		});
 		inject("blockquote", "border-left:4px solid #667eea;background:#f8f9ff;padding:12px 20px;margin:1em 0;border-radius:0 8px 8px 0;color:#444;");
