@@ -533,12 +533,16 @@ class PipelineUI {
 		PipelineUI._checkMilestones(totalCost);
 	}
 
-	// 비용 진행 막대 업데이트 (₩0~₩1000 0~100%)
+	// 비용 진행 막대 업데이트 (₩0~₩150 = 1편 평균 비용 범위 0~100%)
+	// ₩150 초과 시 100% + 보너스 펄스 클래스로 시각 강조
 	static _updateCostBar(cost) {
 		const fill = document.getElementById("costBarFill");
 		if (!fill) return;
-		const pct = Math.min(100, (cost / 1000) * 100);
+		const pct = Math.min(100, (cost / 150) * 100);
 		fill.style.width = pct + "%";
+		// 1편 평균 초과 시 골드 변환
+		if (cost > 150) fill.classList.add("over-budget");
+		else fill.classList.remove("over-budget");
 	}
 
 	// 마일스톤 도달 시 sparkle + 효과음
@@ -708,7 +712,14 @@ class PipelineUI {
 				if (m) runningProgress = parseInt(m[1], 10) / 100;
 			}
 		}
-		const percent = ((done + runningProgress) / total) * 100;
+		let percent = ((done + runningProgress) / total) * 100;
+		// 단조 증가 보장 — markRetry로 phase running 복귀 시 done 카운트 감소해서
+		// percent 일시 하락하는 버그 방지. 100% 도달 전까지 절대 뒤로 가지 않음.
+		if (PipelineUI._lastOverallPercent === undefined) PipelineUI._lastOverallPercent = 0;
+		if (percent < PipelineUI._lastOverallPercent && percent < 100) {
+			percent = PipelineUI._lastOverallPercent;
+		}
+		PipelineUI._lastOverallPercent = percent;
 		const fillEl = document.getElementById("overallGaugeFill");
 		const labelEl = document.getElementById("overallGaugeLabel");
 		if (fillEl) fillEl.style.width = `${percent}%`;

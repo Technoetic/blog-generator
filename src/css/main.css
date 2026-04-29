@@ -270,6 +270,24 @@ label .hint {
 	text-transform: none;
 	letter-spacing: 0.3px;
 }
+.cost-estimate {
+	display: flex;
+	align-items: center;
+	margin-left: auto;
+	font-size: 12px;
+	color: rgba(255, 255, 255, 0.55);
+	background: rgba(34, 211, 238, 0.06);
+	border: 1px solid rgba(34, 211, 238, 0.2);
+	padding: 6px 12px;
+	border-radius: 999px;
+	letter-spacing: 0.2px;
+}
+.cost-estimate strong {
+	color: #22d3ee;
+	font-weight: 700;
+	margin: 0 4px;
+	text-shadow: 0 0 6px rgba(34, 211, 238, 0.4);
+}
 .topic-hint {
 	margin-top: 6px;
 	font-size: 11px;
@@ -896,6 +914,15 @@ select option {
 	border-radius: 999px;
 	transition: width 0.8s cubic-bezier(0.34, 1.4, 0.64, 1);
 	box-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
+}
+.cost-bar-fill.over-budget {
+	background: linear-gradient(90deg, #ffd166 0%, #f97316 50%, #ef4444 100%);
+	box-shadow: 0 0 14px rgba(249, 115, 22, 0.7);
+	animation: over-budget-pulse 1.5s ease-in-out infinite;
+}
+@keyframes over-budget-pulse {
+	0%, 100% { box-shadow: 0 0 14px rgba(249, 115, 22, 0.7); }
+	50%      { box-shadow: 0 0 24px rgba(249, 115, 22, 1); }
 }
 .cost-milestone {
 	position: absolute;
