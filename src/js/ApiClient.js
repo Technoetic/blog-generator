@@ -80,7 +80,8 @@ class ApiClient {
 				body: JSON.stringify(body),
 			}, 90000);
 			if (res.ok) break;
-			const transient = res.status === 503 || res.status === 429 || res.status === 504;
+			// 502 추가: Railway edge timeout 시 자주 발생, 재시도하면 통과 가능
+			const transient = res.status === 502 || res.status === 503 || res.status === 429 || res.status === 504;
 			if (!transient || attempt >= 3) break;
 			attempt++;
 			const wait = 2000 * Math.pow(2, attempt - 1); // 2s, 4s, 8s
