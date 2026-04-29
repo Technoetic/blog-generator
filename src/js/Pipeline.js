@@ -293,6 +293,20 @@ class Pipeline {
 		return false;
 	}
 
+	// 토픽을 안전하게 자름 — 60자 한도 + 단어/괄호 경계 인지 (중간 음절 절단 방지)
+	// 예: "DRAM (Dynamic Random-Access Memory)" → 그대로 (35자)
+	//     매우 긴 토픽은 60자 이내 마지막 ')' 또는 공백에서 자름
+	static _safeTopic(topic) {
+		const raw = (topic || "기술 블로그").trim();
+		if (raw.length <= 60) return raw;
+		const end = 60;
+		const lastClose = raw.lastIndexOf(")", end);
+		if (lastClose >= 30) return raw.substring(0, lastClose + 1);
+		const lastSpace = raw.lastIndexOf(" ", end - 1);
+		if (lastSpace >= 30) return raw.substring(0, lastSpace) + "…";
+		return raw.substring(0, end) + "…";
+	}
+
 	// 다층 방어 제목 합성 (L1~L5):
 	//   L1: Agent ① 프롬프트 강화로 후보 품질 ↑
 	//   L2: title_phrase_candidates 5개 수집
@@ -302,7 +316,7 @@ class Pipeline {
 	//   L6: UI 거부권은 결과 패널의 "🔄 제목 다시 생성" 버튼 (별도 메서드)
 	// 비동기 함수. 모든 layer 실패 시 confirmed_analogy fallback.
 	static async _buildTitleAsync(design, topic, options = {}) {
-		const safeTopic = (topic || "기술 블로그").substring(0, 30);
+		const safeTopic = Pipeline._safeTopic(topic);
 		const maxRegens = options.maxRegens ?? 4; // 0이면 재생성 안 함, 4면 5회까지(초기 1 + 추가 4)
 
 		// L2: 초기 후보 수집
@@ -421,7 +435,7 @@ class Pipeline {
 			const next = (passed.length > 0 ? passed : remaining).sort((a, b) => b.score - a.score)[0];
 			Pipeline._lastTitleState.chosen = next.phrase;
 			console.log(`[L6 재생성] "${chosen}" → "${next.phrase}"`);
-			return `${next.phrase} — ${(topic || "").substring(0, 30)}`;
+			return `${next.phrase} — ${Pipeline._safeTopic(topic)}`;
 		}
 		// 풀 소진 → Agent ① 재호출
 		console.log("[L6 재생성] 풀 소진 — Agent ① 재호출");
@@ -436,12 +450,12 @@ class Pipeline {
 		if (newPassed.length === 0) return null;
 		const next = newPassed.sort((a, b) => b.score - a.score)[0];
 		Pipeline._lastTitleState.chosen = next.phrase;
-		return `${next.phrase} — ${(topic || "").substring(0, 30)}`;
+		return `${next.phrase} — ${Pipeline._safeTopic(topic)}`;
 	}
 
 	// 호환용 동기 fallback. confirmed_analogy 또는 문자열을 받아 명사구 추출 + 하드컷.
 	static _buildTitleSync(rawText, topic) {
-		const safeTopic = (topic || "기술 블로그").substring(0, 30);
+		const safeTopic = Pipeline._safeTopic(topic);
 		let s = (rawText || "비유").trim().replace(/\s+/g, " ");
 		// 1) 문장 종결부에서 자름
 		s = s.split(/[.!?。]/)[0].trim();
