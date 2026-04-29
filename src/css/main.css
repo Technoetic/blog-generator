@@ -247,6 +247,8 @@ h1 {
 
 .input-row {
 	display: flex;
+	flex-wrap: wrap;       /* 폭 부족 시 다음 행으로 (cost-estimate 잘림 방지) */
+	align-items: center;
 	gap: 12px;
 	margin-bottom: 16px;
 }
