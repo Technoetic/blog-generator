@@ -167,8 +167,8 @@ class ApiClient {
 
 	static async uploadToImgur(base64DataUrl) {
 		const base64 = base64DataUrl.replace(/^data:image\/\w+;base64,/, "");
-		// 서버에서 7회 재시도하므로 클라이언트는 1회만. 단일 호출 timeout 180초 (서버 누적 ~2분 + 여유).
-		const delays = [0];
+		// 서버 4회 재시도 누적 ~17초 + 각 30초 timeout. 클라이언트 60초 timeout + 502 시 1회 재시도.
+		const delays = [0, 3000]; // 502 발생 시 3초 후 1회 재시도
 		let lastErr = null;
 		for (let i = 0; i < delays.length; i++) {
 			if (delays[i] > 0) await new Promise((r) => setTimeout(r, delays[i]));
@@ -180,7 +180,7 @@ class ApiClient {
 						...AuthManager.getAuthHeaders(),
 					},
 					body: JSON.stringify({ image: base64 }),
-				}, 180000);
+				}, 60000);
 				if (res.ok) {
 					const data = await res.json();
 					if (data.link) {
@@ -188,14 +188,17 @@ class ApiClient {
 						return data.link;
 					}
 					lastErr = "응답에 link 없음";
+				} else if (res.status === 502 || res.status === 503 || res.status === 504) {
+					lastErr = `Railway edge ${res.status} — 재시도`;
 				} else {
 					lastErr = `HTTP ${res.status}`;
+					break; // 502/503/504 외 에러는 재시도 안 함
 				}
 			} catch (e) {
 				lastErr = e.message;
 			}
 			console.warn(`Imgur 업로드 실패 ${i + 1}/${delays.length}: ${lastErr}`);
 		}
-		throw new Error(`Imgur 업로드 4회 재시도 모두 실패: ${lastErr}`);
+		throw new Error(`Imgur 업로드 실패: ${lastErr}`);
 	}
 }

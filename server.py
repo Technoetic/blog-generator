@@ -1,7 +1,8 @@
 """로컬 서버 — 정적 파일 + Imgur/BizRouter/Blogger 프록시 + 웹 검색"""
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 import json
 import re
+import base64
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -169,23 +170,42 @@ class Handler(SimpleHTTPRequestHandler):
             _json_response(self, 500, {'error': str(e)})
 
     def _handle_imgur(self):
+        # Imgur 사용 + 서버측 7회 재시도 + 지수 백오프 (Catbox는 Railway IP 차단)
         try:
             content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length)
             data = json.loads(body)
             base64_image = data.get('image', '')
             req_data = urllib.parse.urlencode({'image': base64_image, 'type': 'base64'}).encode()
-            req = urllib.request.Request(
-                'https://api.imgur.com/3/image',
-                data=req_data,
-                headers={'Authorization': 'Client-ID 546c25a59c58ad7'}
-            )
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                result = json.loads(resp.read())
-                link = result.get('data', {}).get('link', '')
-            _json_response(self, 200, {'link': link})
+
+            delays = [0, 2, 5, 10]  # 4회 시도, 누적 ~17초 (Railway edge 5분 timeout 회피)
+            last_err = None
+            for i, delay in enumerate(delays):
+                if delay > 0:
+                    time.sleep(delay)
+                try:
+                    req = urllib.request.Request(
+                        'https://api.imgur.com/3/image',
+                        data=req_data,
+                        headers={'Authorization': 'Client-ID 546c25a59c58ad7'},
+                    )
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        result = json.loads(resp.read())
+                    link = result.get('data', {}).get('link', '')
+                    if link:
+                        if i > 0:
+                            print(f'[imgur] {i + 1}차 시도 성공')
+                        _json_response(self, 200, {'link': link})
+                        return
+                    last_err = 'no link in response'
+                except urllib.error.HTTPError as e:
+                    last_err = f'HTTP {e.code}'
+                except Exception as e:
+                    last_err = f'{type(e).__name__}: {e}'
+                print(f'[imgur] 시도 {i + 1}/{len(delays)} 실패: {last_err}')
+            _json_response(self, 500, {'error': f'Imgur 7회 실패: {last_err}'})
         except Exception as e:
-            _json_response(self, 500, {'error': str(e)})
+            _json_response(self, 500, {'error': f'{type(e).__name__}: {e}'})
 
     def _handle_bizrouter(self):
         if not BIZROUTER_KEY:
@@ -279,4 +299,4 @@ if __name__ == '__main__':
     print(f'  GOOGLE_REFRESH_TOKEN: {"설정됨" if GOOGLE_REFRESH_TOKEN else "미설정"}')
     print(f'  BLOGGER_BLOG_ID: {BLOGGER_BLOG_ID or "미설정"}')
     print(f'  ACCESS_PASSWORD: {"설정됨" if ACCESS_PASSWORD else "미설정 (게이트 비활성)"}')
-    HTTPServer(('', PORT), Handler).serve_forever()
+    ThreadingHTTPServer(('', PORT), Handler).serve_forever()
