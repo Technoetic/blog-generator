@@ -394,6 +394,45 @@ label .hint {
 	transform: translateY(-1px);
 	box-shadow: 0 4px 20px rgba(74, 222, 128, 0.6);
 }
+
+/* 도메인 선택 옵션 (모호 토픽 모달) */
+.domain-options {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 16px 0;
+}
+.domain-option {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 4px;
+	padding: 12px 16px;
+	background: rgba(255, 255, 255, 0.04);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	border-radius: 10px;
+	color: #fff;
+	cursor: pointer;
+	transition: all 0.2s;
+	text-align: left;
+	font-family: inherit;
+	font-size: 0.9em;
+}
+.domain-option:hover {
+	background: rgba(34, 211, 238, 0.12);
+	border-color: rgba(34, 211, 238, 0.5);
+	transform: translateX(4px);
+	box-shadow: 0 4px 16px rgba(34, 211, 238, 0.25);
+}
+.domain-label {
+	font-weight: 700;
+	color: #fff;
+}
+.domain-value {
+	font-size: 0.82em;
+	color: rgba(34, 211, 238, 0.8);
+	font-family: 'Consolas', 'Monaco', monospace;
+}
 .topic-hint {
 	margin-top: 6px;
 	font-size: 11px;
