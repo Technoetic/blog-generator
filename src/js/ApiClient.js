@@ -29,10 +29,15 @@ class ApiClient {
 			messages.push({ role: "user", content: combined });
 		} else {
 			for (const m of userMessages) {
-				messages.push({
-					role: "user",
-					content: typeof m === "string" ? m : JSON.stringify(m),
-				});
+				// multimodal 지원: 배열이면 그대로 (text+image content parts)
+				if (Array.isArray(m)) {
+					messages.push({ role: "user", content: m });
+				} else {
+					messages.push({
+						role: "user",
+						content: typeof m === "string" ? m : JSON.stringify(m),
+					});
+				}
 			}
 		}
 
