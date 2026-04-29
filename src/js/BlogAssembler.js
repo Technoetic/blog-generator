@@ -359,6 +359,11 @@ class BlogAssembler {
 		inject("table", "width:100%;border-collapse:collapse;margin:1em 0;font-size:0.95em;");
 		inject("th", "background:#667eea;color:#fff;padding:10px 14px;text-align:left;font-weight:600;border:1px solid #e0e0e0;");
 		inject("td", "padding:10px 14px;border:1px solid #e0e0e0;");
+		// 테이블 정리:
+		// 1) <th> 내부의 <strong> 제거 (th는 이미 font-weight:600, 이중 굵게 redundant)
+		html = html.replace(/<th([^>]*)>(\s*)<strong>([\s\S]*?)<\/strong>(\s*)<\/th>/g, "<th$1>$2$3$4</th>");
+		// 2) 빈 <td></td>를 em-dash로 채워 시각적 안정 (Agent ②가 셀 누락 시)
+		html = html.replace(/<td([^>]*)>\s*<\/td>/g, '<td$1><span style="color:rgba(255,255,255,0.3);">—</span></td>');
 		inject("pre", "background:#1e1e2e;color:#cdd6f4;padding:16px 20px;border-radius:10px;overflow-x:auto;font-size:0.9em;line-height:1.6;margin:1em 0;");
 		// 인라인 <code>: 순한글/한글+공백+기호만 들어 있으면 단순 라벨로 보고 본문 폰트 + 옅은 배경만 적용.
 		// 진짜 코드(영문/숫자/특수문자 포함)는 모노스페이스 유지.
