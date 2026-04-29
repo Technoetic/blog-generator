@@ -1041,6 +1041,31 @@ select option {
 	position: relative;
 	overflow: hidden;
 }
+/* cost-bar 첫 등장 reveal 애니메이션 — 시안 글로우 폭발 + slide down */
+@keyframes cost-bar-reveal {
+	0% {
+		opacity: 0;
+		transform: translateY(-10px) scaleY(0.7);
+		border-color: rgba(34, 211, 238, 0.9);
+		box-shadow: 0 0 40px rgba(34, 211, 238, 0.7);
+	}
+	60% {
+		opacity: 1;
+		transform: translateY(2px) scaleY(1.05);
+		border-color: rgba(34, 211, 238, 0.6);
+		box-shadow: 0 0 28px rgba(34, 211, 238, 0.5);
+	}
+	100% {
+		opacity: 1;
+		transform: translateY(0) scaleY(1);
+		border-color: rgba(255, 255, 255, 0.12);
+		box-shadow: none;
+	}
+}
+.cost-bar.cost-bar-reveal {
+	animation: cost-bar-reveal 0.7s cubic-bezier(0.34, 1.4, 0.64, 1);
+	transform-origin: top center;
+}
 /* 진행 중 활동 글로우 — 사이드 그라디언트 sweep */
 .cost-bar.active::before {
 	content: "";

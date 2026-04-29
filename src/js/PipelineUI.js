@@ -522,8 +522,16 @@ class PipelineUI {
 
 	static updateCost(totalTokens, totalCost) {
 		const bar = document.getElementById("costBar");
+		// 첫 등장 시 — SFX(hudLock) + reveal 애니메이션
+		const isFirstReveal = bar.style.display === "none" || bar.style.display === "";
 		bar.style.display = "flex";
 		bar.classList.add("active"); // 활동 글로우 sweep 활성화
+		if (isFirstReveal) {
+			if (typeof JarvisFX !== "undefined") JarvisFX.hudLock();
+			bar.classList.remove("cost-bar-reveal");
+			void bar.offsetWidth;
+			bar.classList.add("cost-bar-reveal");
+		}
 		PipelineUI._tickerBaseTokens = totalTokens;
 		PipelineUI._tickerBaseCost = totalCost;
 		PipelineUI._lastTrackAt = Date.now();
@@ -732,7 +740,9 @@ class PipelineUI {
 			document.getElementById(`${id}-time`).textContent = "";
 			PipelineUI.setSubStatus(id, "");
 		});
-		document.getElementById("costBar").style.display = "none";
+		const costBarEl = document.getElementById("costBar");
+		costBarEl.style.display = "none";
+		costBarEl.classList.remove("cost-bar-reveal", "active"); // 다음 사이클에서 reveal 다시 트리거
 		document.getElementById("errorMsg").className = "error-msg";
 		document.getElementById("resultPanel").className = "result-panel";
 		const tokensEl = document.getElementById("totalTokens");
