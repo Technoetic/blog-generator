@@ -546,16 +546,36 @@ class PipelineUI {
 		PipelineUI._checkMilestones(totalCost);
 	}
 
-	// 비용 진행 막대 업데이트 (₩0~₩150 = 1편 평균 비용 범위 0~100%)
-	// ₩150 초과 시 100% + 보너스 펄스 클래스로 시각 강조
+	// 비용 진행 막대 업데이트 (동적 스케일 — 정상 0~150, 초과 시 0~300으로 확장)
+	// 정상 모드: ₩50(33%) / ₩100(66%) / ₩150(100%)
+	// 초과 모드: ₩100(33%) / ₩200(66%) / ₩300(100%)
 	static _updateCostBar(cost) {
 		const fill = document.getElementById("costBarFill");
 		if (!fill) return;
-		const pct = Math.min(100, (cost / 150) * 100);
+		const overBudget = cost > 150;
+		const maxScale = overBudget ? 300 : 150;
+		const pct = Math.min(100, (cost / maxScale) * 100);
 		fill.style.width = pct + "%";
-		// 1편 평균 초과 시 골드 변환
-		if (cost > 150) fill.classList.add("over-budget");
+		if (overBudget) fill.classList.add("over-budget");
 		else fill.classList.remove("over-budget");
+		// 마일스톤 재배치
+		const milestones = document.querySelectorAll(".cost-milestone");
+		const targets = overBudget ? [100, 200, 300] : [50, 100, 150];
+		const positions = ["33%", "66%", "100%"];
+		milestones.forEach((m, i) => {
+			if (i >= targets.length) return;
+			const newMile = targets[i];
+			const oldMile = parseInt(m.dataset.mile);
+			if (oldMile !== newMile) {
+				m.dataset.mile = newMile;
+				m.style.left = positions[i];
+				const span = m.querySelector("span");
+				if (span) span.textContent = `₩${newMile}`;
+				// 새 마일스톤은 reached 상태 재계산 필요
+				if (cost >= newMile) m.classList.add("reached");
+				else m.classList.remove("reached");
+			}
+		});
 	}
 
 	// 마일스톤 도달 시 sparkle + 효과음
@@ -747,7 +767,24 @@ class PipelineUI {
 		});
 		const costBarEl = document.getElementById("costBar");
 		costBarEl.style.display = "none";
-		costBarEl.classList.remove("cost-bar-reveal", "active"); // 다음 사이클에서 reveal 다시 트리거
+		costBarEl.classList.remove("cost-bar-reveal", "active");
+		// 비용 막대 초기 스케일(0~150) + 마일스톤 reached 제거
+		const costFillEl = document.getElementById("costBarFill");
+		if (costFillEl) {
+			costFillEl.style.width = "0%";
+			costFillEl.classList.remove("over-budget");
+		}
+		const milestones = document.querySelectorAll(".cost-milestone");
+		const initialTargets = [50, 100, 150];
+		const initialPositions = ["33%", "66%", "100%"];
+		milestones.forEach((m, i) => {
+			if (i >= initialTargets.length) return;
+			m.dataset.mile = initialTargets[i];
+			m.style.left = initialPositions[i];
+			const span = m.querySelector("span");
+			if (span) span.textContent = `₩${initialTargets[i]}`;
+			m.classList.remove("reached");
+		});
 		document.getElementById("errorMsg").className = "error-msg";
 		document.getElementById("resultPanel").className = "result-panel";
 		const tokensEl = document.getElementById("totalTokens");
