@@ -364,6 +364,27 @@ class BlogAssembler {
 		html = html.replace(/<th([^>]*)>(\s*)<strong>([\s\S]*?)<\/strong>(\s*)<\/th>/g, "<th$1>$2$3$4</th>");
 		// 2) 빈 <td></td>를 em-dash로 채워 시각적 안정 (Agent ②가 셀 누락 시)
 		html = html.replace(/<td([^>]*)>\s*<\/td>/g, '<td$1><span style="color:rgba(255,255,255,0.3);">—</span></td>');
+		// 3) <ul> 안의 <li>가 모두 'X | Y' 매핑 패턴이면 → <table>로 변환 (Agent ②가 불릿+|로 표 흉내낸 케이스)
+		html = html.replace(/<ul([^>]*)>([\s\S]*?)<\/ul>/g, (match, ulAttrs, ulContent) => {
+			const lis = ulContent.match(/<li[^>]*>[\s\S]*?<\/li>/g) || [];
+			if (lis.length < 2) return match;
+			// 모든 li가 'X | Y' 패턴(중간에 | 1개) 인지 검사
+			const rows = [];
+			for (const li of lis) {
+				const inner = li.replace(/^<li[^>]*>/, "").replace(/<\/li>$/, "").trim();
+				const parts = inner.split(/\s*\|\s*/);
+				if (parts.length !== 2) return match; // 패턴 미매치 → 원본 ul 유지
+				rows.push(parts);
+			}
+			// 모든 li가 패턴 매치 → table로 변환
+			const tableStyle = "width:100%;border-collapse:collapse;margin:1em 0;font-size:0.95em;";
+			const thStyle = "background:#667eea;color:#fff;padding:10px 14px;text-align:left;font-weight:600;border:1px solid #e0e0e0;";
+			const tdStyle = "padding:10px 14px;border:1px solid #e0e0e0;";
+			const tableRows = rows.map(([a, b]) =>
+				`<tr><td style="${tdStyle}">${a}</td><td style="${tdStyle}">${b}</td></tr>`
+			).join("");
+			return `<table style="${tableStyle}"><thead><tr><th style="${thStyle}">비유</th><th style="${thStyle}">기술</th></tr></thead><tbody>${tableRows}</tbody></table>`;
+		});
 		inject("pre", "background:#1e1e2e;color:#cdd6f4;padding:16px 20px;border-radius:10px;overflow-x:auto;font-size:0.9em;line-height:1.6;margin:1em 0;");
 		// 인라인 <code>: 순한글/한글+공백+기호만 들어 있으면 단순 라벨로 보고 본문 폰트 + 옅은 배경만 적용.
 		// 진짜 코드(영문/숫자/특수문자 포함)는 모노스페이스 유지.
