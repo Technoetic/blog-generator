@@ -14,8 +14,15 @@ class Pipeline {
 			return;
 		}
 
-		// A. 모호 토픽 감지 → 도메인 선택 모달
-		const ambiguous = Pipeline._detectAmbiguousTopic(topic);
+		// A. 모호 토픽 감지 (LLM 동적 분석) → 도메인 선택 모달
+		// 1초 내외 latency 동안 시각 피드백
+		const genBtn = document.getElementById("generateBtn");
+		const origText = genBtn.textContent;
+		genBtn.disabled = true;
+		genBtn.textContent = "🔍 주제 분석 중...";
+		const ambiguous = await Pipeline._detectAmbiguousTopic(topic);
+		genBtn.disabled = false;
+		genBtn.textContent = origText;
 		if (ambiguous) {
 			const refined = await Pipeline._showDomainPickerModal(topic, ambiguous);
 			if (refined === null) return; // 사용자 취소
@@ -340,106 +347,64 @@ class Pipeline {
 		return false;
 	}
 
-	// 모호 토픽 감지 — 일반 용어 짧은 입력은 도메인이 명시되지 않으면 잘못 해석될 수 있음
-	// 반환: null (모호 아님) 또는 { word, domains: [{label, value, hint}] }
-	static _detectAmbiguousTopic(topic) {
-		const t = topic.trim().toLowerCase().replace(/[^a-z가-힣]/g, "");
-		// 입력에 도메인 힌트(영문 정식명/한글 도메인)가 이미 있으면 모호 아님
-		// 예: "Chrome 확장", "Redis 캐시"는 통과 — 이미 도메인 명시
+	// 모호 토픽 동적 감지 — Gemini Flash Lite가 입력 단어를 분석해 도메인 후보 반환
+	// 한글+영문 혼합 입력은 이미 도메인 명시로 간주, LLM 호출 스킵 (latency/비용 절감)
+	// 반환: null (모호 아님) 또는 { word, domains: [{label, value}] }
+	static async _detectAmbiguousTopic(topic) {
+		// fast path: 한글+영문 혼합 = 도메인 명시로 간주
 		if (topic.split(/\s+/).length >= 2 && /[가-힣]/.test(topic) && /[a-zA-Z]/.test(topic)) {
-			// 한글+영문 혼합 = 사용자가 명시적으로 도메인 표기한 것으로 간주
 			return null;
 		}
-		// 모호 키워드 사전 (도메인 분기가 큰 일반 용어)
-		const ambiguousMap = {
-			"플러그인": {
-				word: "플러그인",
-				domains: [
-					{ label: "🌐 브라우저 확장 (Chrome/Firefox)", value: "Chrome 확장 프로그램" },
-					{ label: "💻 IDE 확장 (VSCode/IntelliJ)", value: "VSCode 확장 플러그인" },
-					{ label: "📝 WordPress 플러그인", value: "WordPress 플러그인" },
-					{ label: "🎮 게임 플러그인 (Minecraft 등)", value: "Minecraft 게임 플러그인" },
-					{ label: "🎵 VST 오디오 플러그인", value: "VST 오디오 플러그인" },
-				],
-			},
-			"plugin": {
-				word: "plugin",
-				domains: [
-					{ label: "🌐 브라우저 확장", value: "Chrome 확장 프로그램" },
-					{ label: "💻 IDE 확장", value: "VSCode 확장 플러그인" },
-					{ label: "📝 WordPress 플러그인", value: "WordPress 플러그인" },
-				],
-			},
-			"확장": {
-				word: "확장",
-				domains: [
-					{ label: "🌐 브라우저 확장 (Chrome/Firefox)", value: "Chrome 확장 프로그램" },
-					{ label: "💻 IDE 확장 (VSCode/IntelliJ)", value: "VSCode 확장 플러그인" },
-				],
-			},
-			"캐시": {
-				word: "캐시",
-				domains: [
-					{ label: "🖥 CPU 캐시 (L1/L2/L3)", value: "CPU 캐시 메모리" },
-					{ label: "📦 Redis 인메모리 캐시", value: "Redis 캐시" },
-					{ label: "🌐 브라우저 캐시", value: "브라우저 캐시" },
-					{ label: "🔄 CDN 캐시", value: "CDN 캐시" },
-				],
-			},
-			"cache": {
-				word: "cache",
-				domains: [
-					{ label: "🖥 CPU 캐시", value: "CPU 캐시 메모리" },
-					{ label: "📦 Redis 인메모리 캐시", value: "Redis 캐시" },
-					{ label: "🌐 브라우저 캐시", value: "브라우저 캐시" },
-				],
-			},
-			"큐": {
-				word: "큐",
-				domains: [
-					{ label: "📨 메시지 큐 (RabbitMQ/Kafka)", value: "메시지 큐 (RabbitMQ)" },
-					{ label: "🔁 작업 큐 (Job Queue)", value: "작업 큐 (Job Queue)" },
-					{ label: "📊 자료구조 큐 (FIFO)", value: "자료구조 큐 FIFO" },
-				],
-			},
-			"queue": {
-				word: "queue",
-				domains: [
-					{ label: "📨 메시지 큐 (RabbitMQ/Kafka)", value: "메시지 큐 RabbitMQ" },
-					{ label: "📊 자료구조 큐 (FIFO)", value: "자료구조 큐 FIFO" },
-				],
-			},
-			"reflow": {
-				word: "Reflow",
-				domains: [
-					{ label: "🌐 CSS 브라우저 레이아웃 재계산", value: "CSS 리플로우" },
-					{ label: "🔧 SMT 솔더링 공정", value: "SMT 리플로우 솔더링" },
-				],
-			},
-			"deadlock": {
-				word: "Deadlock",
-				domains: [
-					{ label: "🔒 멀티스레드 교착 상태", value: "스레드 데드락" },
-					{ label: "🎮 Valve 게임 Deadlock", value: "Valve 게임 Deadlock" },
-				],
-			},
-			"overhaul": {
-				word: "Overhaul",
-				domains: [
-					{ label: "🚗 자동차 엔진 정비", value: "자동차 엔진 오버홀" },
-					{ label: "🔄 시스템 전면 재설계", value: "소프트웨어 시스템 오버홀" },
-				],
-			},
-			"pipeline": {
-				word: "pipeline",
-				domains: [
-					{ label: "⚙ CI/CD 빌드 파이프라인", value: "CI/CD 파이프라인" },
-					{ label: "📊 데이터 파이프라인", value: "데이터 파이프라인" },
-					{ label: "🖥 CPU 명령어 파이프라이닝", value: "CPU 명령어 파이프라인" },
-				],
-			},
-		};
-		return ambiguousMap[t] || null;
+		try {
+			const result = await ApiClient.callAgent(
+				`당신은 기술 블로그 주제 모호성 감지 전문가입니다. 사용자가 입력한 단어/구절을 분석하세요.
+
+🚨 판정 기준:
+- **모호함 (is_ambiguous: true)**: 같은 단어가 2개 이상의 서로 다른 기술 도메인에서 핵심 용어로 쓰임.
+  예: '플러그인' → 브라우저/IDE/WordPress/게임 / '캐시' → CPU/Redis/브라우저 / 'Reflow' → CSS/SMT
+- **명확함 (is_ambiguous: false)**: 단일 도메인에서만 의미가 명확.
+  예: 'OAuth2 인증' / 'Kubernetes' / 'GraphQL' / '이미 한글+영문 도메인 명시된 입력'
+
+모호하면 도메인 후보 2~5개 반환:
+- label: 이모지 + 한글 도메인 설명 (예: "🌐 브라우저 확장 (Chrome/Firefox)")
+- value: 그 도메인으로 명확화된 입력 토픽 (예: "Chrome 확장 프로그램")
+
+명확하면 빈 배열 반환.`,
+				[`사용자 입력: "${topic}"`],
+				{
+					model: Config.MODEL, // Gemini Flash Lite (빠르고 저렴)
+					thinking_budget: 512,
+					temperature: 0.0,
+					schema_name: "ambiguity_check",
+					response_schema: {
+						type: "object",
+						properties: {
+							is_ambiguous: { type: "boolean" },
+							domains: {
+								type: "array",
+								items: {
+									type: "object",
+									properties: {
+										label: { type: "string" },
+										value: { type: "string" },
+									},
+									required: ["label", "value"],
+								},
+							},
+						},
+						required: ["is_ambiguous", "domains"],
+					},
+				},
+			);
+			const data = result?.data;
+			if (data?.is_ambiguous && Array.isArray(data.domains) && data.domains.length >= 2) {
+				return { word: topic, domains: data.domains };
+			}
+			return null;
+		} catch (e) {
+			console.warn("[모호 감지] LLM 실패, 스킵:", e.message);
+			return null;
+		}
 	}
 
 	// 도메인 선택 모달 — 모호 토픽 감지 시 사용자가 명시적 선택
