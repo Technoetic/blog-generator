@@ -45,11 +45,22 @@ class Pipeline {
 			await this._phase3b();
 			await this._phase3c(ratio);
 			await this._phase4();
-			// 제목 미리 생성 (UI 거부권 노출용). _phase5에서 재사용.
+			// 제목 미리 생성
 			this.results.title = await Pipeline._buildTitleAsync(
 				this.results.design,
 				this.results.contextPacket?.topic,
 			);
+			// 발행 전 강제 확인 모달 — 사용자 거부권 진짜 100% 회피 보장
+			// 모달이 사용자 응답까지 await — '확인' 또는 '🔄 다시 생성' 선택
+			if (publishMode !== "local") {
+				const finalTitle = await Pipeline._showTitleConfirmModal(this.results.title, this.results.design, this.results.contextPacket?.topic);
+				if (finalTitle === null) {
+					// 사용자가 취소 (publishMode를 local로 변경)
+					publishMode = "local";
+				} else {
+					this.results.title = finalTitle;
+				}
+			}
 			await this._phase5(publishMode);
 
 			PipelineUI.showCost(
@@ -478,6 +489,72 @@ class Pipeline {
 		const next = newPassed.sort((a, b) => b.score - a.score)[0];
 		Pipeline._lastTitleState.chosen = next.phrase;
 		return `${next.phrase} — ${Pipeline._safeTopic(topic)}`;
+	}
+
+	// 발행 전 강제 확인 모달 — 사용자가 명시적으로 OK 또는 다시 생성 선택해야 진행.
+	// L6 사용자 거부권을 100% 발동시키는 핵심 게이트. 작은 버튼이 아닌 큰 모달로 강제 노출.
+	// 반환: 최종 제목(string) — 사용자 OK / null — 취소(local로 저장만)
+	static _showTitleConfirmModal(initialTitle, design, topic) {
+		return new Promise((resolve) => {
+			const existing = document.getElementById("titleConfirmModal");
+			if (existing) existing.remove();
+			const overlay = document.createElement("div");
+			overlay.id = "titleConfirmModal";
+			overlay.className = "title-confirm-overlay";
+			overlay.innerHTML = `
+				<div class="title-confirm-modal">
+					<div class="tcm-header">
+						<span class="tcm-icon">📝</span>
+						<span class="tcm-title-label">발행 전 제목 확인</span>
+					</div>
+					<div class="tcm-body">
+						<div class="tcm-prompt">이 제목으로 발행할까요?</div>
+						<div class="tcm-title-display" id="tcmTitleDisplay">${initialTitle}</div>
+						<div class="tcm-hint">어색하면 🔄 버튼으로 다른 제목을 생성하세요. 마음에 들 때까지 무한 재생성 가능.</div>
+					</div>
+					<div class="tcm-actions">
+						<button type="button" class="tcm-btn tcm-btn-regen" id="tcmRegenBtn">🔄 다시 생성</button>
+						<button type="button" class="tcm-btn tcm-btn-cancel" id="tcmCancelBtn">취소 (로컬만 저장)</button>
+						<button type="button" class="tcm-btn tcm-btn-ok" id="tcmOkBtn">✓ 이 제목으로 발행</button>
+					</div>
+				</div>
+			`;
+			document.body.appendChild(overlay);
+			let currentTitle = initialTitle;
+			const display = overlay.querySelector("#tcmTitleDisplay");
+			const regenBtn = overlay.querySelector("#tcmRegenBtn");
+			const okBtn = overlay.querySelector("#tcmOkBtn");
+			const cancelBtn = overlay.querySelector("#tcmCancelBtn");
+			regenBtn.addEventListener("click", async () => {
+				regenBtn.disabled = true;
+				regenBtn.textContent = "🔄 생성 중...";
+				try {
+					const newTitle = await Pipeline.regenerateTitle();
+					if (newTitle) {
+						currentTitle = newTitle;
+						display.textContent = newTitle;
+						display.classList.remove("regen-flash");
+						void display.offsetWidth;
+						display.classList.add("regen-flash");
+					} else {
+						alert("더 이상 생성 가능한 후보가 없습니다.");
+					}
+				} catch (e) {
+					alert("재생성 실패: " + e.message);
+				} finally {
+					regenBtn.disabled = false;
+					regenBtn.textContent = "🔄 다시 생성";
+				}
+			});
+			okBtn.addEventListener("click", () => {
+				overlay.remove();
+				resolve(currentTitle);
+			});
+			cancelBtn.addEventListener("click", () => {
+				overlay.remove();
+				resolve(null); // 취소 → publishMode = local
+			});
+		});
 	}
 
 	// 호환용 동기 fallback. confirmed_analogy 또는 문자열을 받아 명사구 추출 + 하드컷.
