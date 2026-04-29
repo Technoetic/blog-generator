@@ -63,21 +63,25 @@ class Pipeline {
 			await this._phase3b();
 			await this._phase3c(ratio);
 			await this._phase4();
-			// 제목 미리 생성
-			this.results.title = await Pipeline._buildTitleAsync(
-				this.results.design,
-				this.results.contextPacket?.topic,
-			);
-			// 발행 전 강제 확인 모달 — 사용자 거부권 진짜 100% 회피 보장
-			// 모달이 사용자 응답까지 await — '확인' 또는 '🔄 다시 생성' 선택
+			// 발행 전 강제 확인 모달 — Phase 4 done 즉시 띄움 (제목 생성은 모달 안에서 진행)
+			// 사용자가 "끝났는데 왜 안 뜨지?" 느끼지 않게 빈 시간 제거.
 			if (publishMode !== "local") {
-				const finalTitle = await Pipeline._showTitleConfirmModal(this.results.title, this.results.design, this.results.contextPacket?.topic);
+				const finalTitle = await Pipeline._showTitleConfirmModal(
+					null, // 처음엔 제목 없음 → 모달 안에서 생성
+					this.results.design,
+					this.results.contextPacket?.topic,
+				);
 				if (finalTitle === null) {
-					// 사용자가 취소 (publishMode를 local로 변경)
 					publishMode = "local";
 				} else {
 					this.results.title = finalTitle;
 				}
+			} else {
+				// local 모드: 모달 없이 제목만 생성
+				this.results.title = await Pipeline._buildTitleAsync(
+					this.results.design,
+					this.results.contextPacket?.topic,
+				);
 			}
 			await this._phase5(publishMode);
 
@@ -619,15 +623,16 @@ class Pipeline {
 	}
 
 	// 발행 전 강제 확인 모달 — 사용자가 명시적으로 OK 또는 다시 생성 선택해야 진행.
-	// L6 사용자 거부권을 100% 발동시키는 핵심 게이트. 작은 버튼이 아닌 큰 모달로 강제 노출.
+	// initialTitle === null이면 모달 안에서 _buildTitleAsync 호출 + 스피너 표시 (UX: 빈 시간 제거)
 	// 반환: 최종 제목(string) — 사용자 OK / null — 취소(local로 저장만)
 	static _showTitleConfirmModal(initialTitle, design, topic) {
-		return new Promise((resolve) => {
+		return new Promise(async (resolve) => {
 			const existing = document.getElementById("titleConfirmModal");
 			if (existing) existing.remove();
 			const overlay = document.createElement("div");
 			overlay.id = "titleConfirmModal";
 			overlay.className = "title-confirm-overlay";
+			const initialDisplay = initialTitle || `<span class="tcm-spinner"></span> 제목 생성 중...`;
 			overlay.innerHTML = `
 				<div class="title-confirm-modal">
 					<div class="tcm-header">
@@ -636,13 +641,13 @@ class Pipeline {
 					</div>
 					<div class="tcm-body">
 						<div class="tcm-prompt">이 제목으로 발행할까요?</div>
-						<div class="tcm-title-display" id="tcmTitleDisplay">${initialTitle}</div>
+						<div class="tcm-title-display" id="tcmTitleDisplay">${initialDisplay}</div>
 						<div class="tcm-hint">어색하면 🔄 버튼으로 다른 제목을 생성하세요. 마음에 들 때까지 무한 재생성 가능.</div>
 					</div>
 					<div class="tcm-actions">
-						<button type="button" class="tcm-btn tcm-btn-regen" id="tcmRegenBtn">🔄 다시 생성</button>
+						<button type="button" class="tcm-btn tcm-btn-regen" id="tcmRegenBtn" disabled>🔄 다시 생성</button>
 						<button type="button" class="tcm-btn tcm-btn-cancel" id="tcmCancelBtn">취소 (로컬만 저장)</button>
-						<button type="button" class="tcm-btn tcm-btn-ok" id="tcmOkBtn">✓ 이 제목으로 발행</button>
+						<button type="button" class="tcm-btn tcm-btn-ok" id="tcmOkBtn" disabled>✓ 이 제목으로 발행</button>
 					</div>
 				</div>
 			`;
@@ -652,8 +657,26 @@ class Pipeline {
 			const regenBtn = overlay.querySelector("#tcmRegenBtn");
 			const okBtn = overlay.querySelector("#tcmOkBtn");
 			const cancelBtn = overlay.querySelector("#tcmCancelBtn");
+			// initialTitle 없으면 모달 안에서 제목 생성 (스피너 표시 → 도착 시 갱신)
+			if (!initialTitle) {
+				try {
+					currentTitle = await Pipeline._buildTitleAsync(design, topic);
+					display.textContent = currentTitle;
+					display.classList.add("regen-flash");
+					regenBtn.disabled = false;
+					okBtn.disabled = false;
+				} catch (e) {
+					display.textContent = "제목 생성 실패: " + e.message;
+					regenBtn.disabled = false;
+					okBtn.disabled = false;
+				}
+			} else {
+				regenBtn.disabled = false;
+				okBtn.disabled = false;
+			}
 			regenBtn.addEventListener("click", async () => {
 				regenBtn.disabled = true;
+				okBtn.disabled = true;
 				regenBtn.textContent = "🔄 생성 중...";
 				try {
 					const newTitle = await Pipeline.regenerateTitle();
@@ -670,6 +693,7 @@ class Pipeline {
 					alert("재생성 실패: " + e.message);
 				} finally {
 					regenBtn.disabled = false;
+					okBtn.disabled = false;
 					regenBtn.textContent = "🔄 다시 생성";
 				}
 			});
@@ -679,7 +703,7 @@ class Pipeline {
 			});
 			cancelBtn.addEventListener("click", () => {
 				overlay.remove();
-				resolve(null); // 취소 → publishMode = local
+				resolve(null);
 			});
 		});
 	}
