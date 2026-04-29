@@ -43,94 +43,99 @@ class JarvisFX {
 		return JarvisFX._bgmEnabled;
 	}
 
-	// Epic Cinematic BGM — 단일 BufferSource + loop=true (sample-level 정확 loop)
-	// mp3 디코딩 후 head/tail silence trim한 새 buffer 생성 → loopStart/loopEnd 명시
-	// 이전 듀얼 BufferSource crossfade의 setTimeout 부정확성 문제 해결.
+	// Epic Cinematic BGM — Web Audio sample-accurate 듀얼 crossfade
+	// 트랙 자체의 음악적 구조(인트로/페이드아웃)로 인한 단절을 8초 crossfade로 회피.
+	// AudioContext.currentTime 기반 스케줄링 (setTimeout 부정확성 X).
 	static BGM_TARGET_VOL = 0.30;
-	static BGM_TRIM_HEAD_SEC = 0.05; // 시작 silence skip
-	static BGM_TRIM_TAIL_SEC = 0.15; // 끝 silence skip
+	static BGM_CROSSFADE_SEC = 8;     // 끝나기 8초 전부터 crossfade
+	static BGM_TRIM_HEAD_SEC = 0.05;
+	static BGM_TRIM_TAIL_SEC = 0.15;
 
-	// mp3 buffer head/tail을 잘라낸 trimmed buffer 생성 (silence 제거)
-	static async _ensureTrimmedBgmBuffer() {
-		if (JarvisFX._trimmedBgmBuffer) return JarvisFX._trimmedBgmBuffer;
+	static async _ensureBgmBufferV2() {
+		if (JarvisFX._bgmBufferV2) return JarvisFX._bgmBufferV2;
 		const ctx = JarvisFX.ctx;
-		const url = "assets/bgm-epic-cinematic.mp3";
-		const ab = await fetch(url).then((r) => r.arrayBuffer());
-		const original = await ctx.decodeAudioData(ab);
-		const sr = original.sampleRate;
-		const startSample = Math.floor(JarvisFX.BGM_TRIM_HEAD_SEC * sr);
-		const endSample = Math.floor((original.duration - JarvisFX.BGM_TRIM_TAIL_SEC) * sr);
-		const trimmedLen = endSample - startSample;
-		const trimmed = ctx.createBuffer(original.numberOfChannels, trimmedLen, sr);
-		// 채널별 복사 + 매끄러운 loop을 위한 첫/끝 50ms crossfade (loop point에서 클릭 방지)
-		const xfadeLen = Math.floor(0.05 * sr); // 50ms crossfade
-		for (let ch = 0; ch < original.numberOfChannels; ch++) {
-			const srcData = original.getChannelData(ch);
-			const dstData = trimmed.getChannelData(ch);
-			for (let i = 0; i < trimmedLen; i++) {
-				dstData[i] = srcData[startSample + i];
-			}
-			// 끝부분 50ms를 첫부분 50ms와 mix → loop 경계에서 sample 불연속 제거
-			for (let i = 0; i < xfadeLen; i++) {
-				const t = i / xfadeLen;
-				const headSample = dstData[i];
-				const tailSample = dstData[trimmedLen - xfadeLen + i];
-				// linear crossfade
-				dstData[trimmedLen - xfadeLen + i] = tailSample * (1 - t) + headSample * t;
-			}
-		}
-		JarvisFX._trimmedBgmBuffer = trimmed;
-		return trimmed;
+		const ab = await fetch("assets/bgm-epic-cinematic.mp3").then((r) => r.arrayBuffer());
+		const buf = await ctx.decodeAudioData(ab);
+		JarvisFX._bgmBufferV2 = buf;
+		return buf;
 	}
 
 	static async startBgm() {
 		if (!JarvisFX._enabled || !JarvisFX._bgmEnabled) return;
-		if (JarvisFX._bgmSource) return; // 이미 재생 중
-		const ctx = JarvisFX.ctx;
+		if (JarvisFX._bgmActive) return;
+		JarvisFX._bgmActive = true;
 		try {
-			const buffer = await JarvisFX._ensureTrimmedBgmBuffer();
-			const src = ctx.createBufferSource();
-			src.buffer = buffer;
-			src.loop = true; // 핵심: Web Audio sample-level loop (setTimeout 의존 X)
-			src.loopStart = 0;
-			src.loopEnd = buffer.duration;
-
-			const gain = ctx.createGain();
-			src.connect(gain).connect(ctx.destination);
-
-			// fade in 2초
-			const t0 = ctx.currentTime;
-			gain.gain.setValueAtTime(0.0001, t0);
-			gain.gain.linearRampToValueAtTime(JarvisFX.BGM_TARGET_VOL, t0 + 2.0);
-			src.start();
-
-			JarvisFX._bgmSource = src;
-			JarvisFX._bgmGain = gain;
+			const buffer = await JarvisFX._ensureBgmBufferV2();
+			JarvisFX._bgmInstances = [];
+			JarvisFX._scheduleBgmInstance(buffer, JarvisFX.ctx.currentTime, true);
 		} catch (e) {
 			console.warn("[BGM] start failed:", e.message);
+			JarvisFX._bgmActive = false;
 		}
 	}
 
+	// 단일 트랙 인스턴스 시작 + 다음 인스턴스를 sample-accurate으로 예약
+	// AudioBufferSourceNode.onended를 사용해 setTimeout 의존 X
+	static _scheduleBgmInstance(buffer, startAt, isFirst) {
+		if (!JarvisFX._bgmActive) return;
+		const ctx = JarvisFX.ctx;
+		const tHead = JarvisFX.BGM_TRIM_HEAD_SEC;
+		const tTail = JarvisFX.BGM_TRIM_TAIL_SEC;
+		const xfade = JarvisFX.BGM_CROSSFADE_SEC;
+		const playableDur = buffer.duration - tHead - tTail;
+		const fadeInDur = isFirst ? 2.0 : xfade;
+
+		const src = ctx.createBufferSource();
+		src.buffer = buffer;
+		const gain = ctx.createGain();
+		src.connect(gain).connect(ctx.destination);
+
+		// fade in
+		gain.gain.setValueAtTime(0.0001, startAt);
+		gain.gain.linearRampToValueAtTime(JarvisFX.BGM_TARGET_VOL, startAt + fadeInDur);
+		// fade out (마지막 xfade 초)
+		const fadeOutStart = startAt + playableDur - xfade;
+		gain.gain.setValueAtTime(JarvisFX.BGM_TARGET_VOL, fadeOutStart);
+		gain.gain.linearRampToValueAtTime(0.0001, startAt + playableDur);
+
+		src.start(startAt, tHead);
+		src.stop(startAt + playableDur + 0.05);
+
+		JarvisFX._bgmInstances.push({ src, gain });
+
+		// 다음 인스턴스 — currentTime 기반 정확 스케줄링
+		// 이 인스턴스의 fadeOutStart가 다음 인스턴스의 startAt
+		const nextStartAt = fadeOutStart;
+		// onended 대신 setTimeout 사용하지만, AudioContext.currentTime을 startAt으로 넘겨
+		// Web Audio가 sample-accurate으로 시작 (브라우저 audio thread 내부)
+		const msUntilSchedule = Math.max(50, (nextStartAt - ctx.currentTime - 1.0) * 1000);
+		JarvisFX._bgmNextTimer = setTimeout(() => {
+			if (!JarvisFX._bgmActive) return;
+			JarvisFX._scheduleBgmInstance(buffer, nextStartAt, false);
+			// 오래된 인스턴스 정리 (현재 + 다음만 유지)
+			JarvisFX._bgmInstances = JarvisFX._bgmInstances.slice(-2);
+		}, msUntilSchedule);
+	}
+
 	static stopBgm() {
-		if (!JarvisFX._bgmSource) {
-			// 호환: 이전 <audio> 태그 잔여 정지
+		if (!JarvisFX._bgmActive) {
 			const audio = document.getElementById("bgmAudio");
 			if (audio && !audio.paused) { audio.pause(); audio.currentTime = 0; }
 			return;
 		}
+		JarvisFX._bgmActive = false;
+		clearTimeout(JarvisFX._bgmNextTimer);
 		const ctx = JarvisFX.ctx;
 		const t = ctx.currentTime;
-		const src = JarvisFX._bgmSource;
-		const gain = JarvisFX._bgmGain;
-		// fade out 1.5초 후 stop
-		try {
-			gain.gain.cancelScheduledValues(t);
-			gain.gain.setValueAtTime(gain.gain.value, t);
-			gain.gain.linearRampToValueAtTime(0.0001, t + 1.5);
-			setTimeout(() => { try { src.stop(); } catch (e) {} }, 1600);
-		} catch (e) {}
-		JarvisFX._bgmSource = null;
-		JarvisFX._bgmGain = null;
+		(JarvisFX._bgmInstances || []).forEach(({ src, gain }) => {
+			try {
+				gain.gain.cancelScheduledValues(t);
+				gain.gain.setValueAtTime(gain.gain.value, t);
+				gain.gain.linearRampToValueAtTime(0.0001, t + 1.5);
+				setTimeout(() => { try { src.stop(); } catch (e) {} }, 1600);
+			} catch (e) {}
+		});
+		setTimeout(() => { JarvisFX._bgmInstances = []; }, 1700);
 	}
 
 	// SFX 재생 (Mixkit royalty-free sci-fi mp3 — 합성 사운드보다 영화급 음질)
