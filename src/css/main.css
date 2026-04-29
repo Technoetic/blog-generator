@@ -519,6 +519,68 @@ select option {
 	box-shadow: none;
 }
 
+/* 분석 중 — 게이지 애니메이션 */
+.btn-primary.analyzing {
+	opacity: 1;
+	cursor: wait;
+	display: inline-flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	padding-top: 10px;
+	padding-bottom: 10px;
+	background: linear-gradient(135deg, #4338ca, #6d28d9);
+	box-shadow: 0 0 20px rgba(102, 126, 234, 0.5);
+	animation: analyzing-pulse 1.5s ease-in-out infinite;
+}
+@keyframes analyzing-pulse {
+	0%, 100% { box-shadow: 0 0 20px rgba(102, 126, 234, 0.5); }
+	50%      { box-shadow: 0 0 32px rgba(102, 126, 234, 0.9); }
+}
+.btn-primary.analyzing .analyzing-text {
+	font-size: 0.95em;
+	font-weight: 700;
+	letter-spacing: 0.5px;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+.btn-primary.analyzing .analyzing-text::after {
+	content: "";
+	display: inline-block;
+	animation: analyzing-dots 1.4s steps(4) infinite;
+}
+@keyframes analyzing-dots {
+	0%   { content: ""; }
+	25%  { content: "."; }
+	50%  { content: ".."; }
+	75%  { content: "..."; }
+	100% { content: ""; }
+}
+/* 게이지 — indeterminate sweep */
+.btn-primary.analyzing .analyzing-gauge {
+	width: 80%;
+	max-width: 240px;
+	height: 4px;
+	background: rgba(255, 255, 255, 0.15);
+	border-radius: 999px;
+	overflow: hidden;
+	position: relative;
+}
+.btn-primary.analyzing .analyzing-fill {
+	display: block;
+	width: 30%;
+	height: 100%;
+	background: linear-gradient(90deg, transparent, #fff, transparent);
+	border-radius: 999px;
+	animation: analyzing-sweep 1.2s ease-in-out infinite;
+}
+@keyframes analyzing-sweep {
+	0%   { transform: translateX(-100%); }
+	100% { transform: translateX(350%); }
+}
+
 .btn-secondary {
 	background: rgba(255, 255, 255, 0.1);
 	color: #fff;

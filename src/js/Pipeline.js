@@ -15,14 +15,16 @@ class Pipeline {
 		}
 
 		// A. 모호 토픽 감지 (LLM 동적 분석) → 도메인 선택 모달
-		// 1초 내외 latency 동안 시각 피드백
+		// LLM 호출 1초 내외 — 게이지 애니메이션으로 진행감 시각화
 		const genBtn = document.getElementById("generateBtn");
-		const origText = genBtn.textContent;
+		const origHTML = genBtn.innerHTML;
 		genBtn.disabled = true;
-		genBtn.textContent = "🔍 주제 분석 중...";
+		genBtn.classList.add("analyzing");
+		genBtn.innerHTML = `<span class="analyzing-text">🔍 주제 분석 중</span><span class="analyzing-gauge"><span class="analyzing-fill"></span></span>`;
 		const ambiguous = await Pipeline._detectAmbiguousTopic(topic);
 		genBtn.disabled = false;
-		genBtn.textContent = origText;
+		genBtn.classList.remove("analyzing");
+		genBtn.innerHTML = origHTML;
 		if (ambiguous) {
 			const refined = await Pipeline._showDomainPickerModal(topic, ambiguous);
 			if (refined === null) return; // 사용자 취소
