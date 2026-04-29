@@ -272,37 +272,6 @@ label .hint {
 	text-transform: none;
 	letter-spacing: 0.3px;
 }
-.cost-estimate {
-	display: inline-flex;
-	align-items: center;
-	margin-left: auto;
-	font-size: 12px;
-	color: rgba(255, 255, 255, 0.55);
-	background: rgba(34, 211, 238, 0.06);
-	border: 1px solid rgba(34, 211, 238, 0.2);
-	padding: 6px 12px;
-	border-radius: 999px;
-	letter-spacing: 0.2px;
-	white-space: nowrap;       /* 텍스트 줄바꿈 차단 */
-	flex-shrink: 0;            /* 다른 요소 우선 줄어듦 */
-	gap: 4px;
-}
-.cost-estimate strong {
-	color: #22d3ee;
-	font-weight: 700;
-	text-shadow: 0 0 6px rgba(34, 211, 238, 0.4);
-	white-space: nowrap;
-}
-/* 좁은 화면(< 640px)에서는 별도 행으로 이동 (입력 행 너비 보호) */
-@media (max-width: 640px) {
-	.cost-estimate {
-		margin-left: 0;
-		margin-top: 8px;
-		flex-basis: 100%;
-		justify-content: center;
-	}
-}
-
 /* 발행 전 강제 제목 확인 모달 (L6 사용자 거부권 진짜 100% 발동 게이트) */
 .title-confirm-overlay {
 	position: fixed;
