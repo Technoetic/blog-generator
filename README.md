@@ -193,7 +193,7 @@ flowchart TD
     SONAR --> E2["canonical_name<br/>+ 검색 결과 4~6건"]
     E --> T["topic 교체"]
     E2 --> T
-    T --> LLM["6 Agent에 정확한 컨텍스트 전달"]
+    T --> LLM["7 Agent에 정확한 컨텍스트 전달"]
 
     style DG fill:#339af0,color:#fff
     style SONAR fill:#f76707,color:#fff
@@ -743,7 +743,7 @@ graph TD
 
 <div align="center">
 
-<img src="assets/footer.gif" width="90%" alt="6 Agent 셀러브레이션 — Blog Published!"/>
+<img src="assets/footer.gif" width="90%" alt="7 Agent 셀러브레이션 — Blog Published!"/>
 
 <br/>
 
