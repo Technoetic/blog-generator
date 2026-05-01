@@ -27,7 +27,12 @@ class Pipeline {
 		genBtn.disabled = true;
 		genBtn.classList.add("analyzing");
 		genBtn.innerHTML = `<span class="analyzing-text">🔍 주제 분석 중</span><span class="analyzing-gauge"><span class="analyzing-fill"></span></span>`;
-		const ambiguous = await Pipeline._detectAmbiguousTopic(topic);
+		// 14회차 2회차(2026-05-01): 검색 → 모호성 감지 순서로 재배치 (LLM 컷오프 회피).
+		//   웹 검색을 미리 실행 → 결과를 모호성 감지 LLM에 컨텍스트로 주입 → _phase1에 캐시 전달.
+		//   추가 호출/시간/비용 0 (검색은 어차피 _phase1에서 발생할 호출).
+		const prefetchedSearch = await this._searchWebForTopic(topic);
+		if (prefetchedSearch.topic) topic = prefetchedSearch.topic;
+		const ambiguous = await Pipeline._detectAmbiguousTopic(topic, prefetchedSearch);
 		genBtn.disabled = false;
 		genBtn.classList.remove("analyzing");
 		genBtn.innerHTML = origHTML;
@@ -36,6 +41,10 @@ class Pipeline {
 			if (refined === null) return; // 사용자 취소
 			topic = refined; // 명시적 도메인 포함된 토픽으로 교체
 			document.getElementById("topic").value = topic;
+			// 사용자가 도메인 선택했으니 prefetched 검색은 무효 (도메인 다른 검색이 필요)
+			prefetchedSearch.webResults = [];
+			prefetchedSearch.canonicalName = null;
+			prefetchedSearch.topic = topic;
 		}
 
 		const tone = document.getElementById("tone").value;
@@ -63,7 +72,7 @@ class Pipeline {
 		this._pendingWindow = null;
 
 		try {
-			await this._phase1(topic, tone, ratio);
+			await this._phase1(topic, tone, ratio, prefetchedSearch);
 			// 14회차(2026-05-01): phase1 done → phase2a 진입 사이 spinner 빈 시간 제거.
 			//   사용자 결함 보고: phase1 완료 직후 phase2a row가 "II" 아이콘만 있고 spinner가 잠시 안 떠 정지처럼 보임.
 			//   해결: 다음 phase의 setPhase("running")을 동기적으로 미리 호출 → timed 안에서 다시 호출되어도 무해.
@@ -424,27 +433,41 @@ class Pipeline {
 	// 모호 토픽 동적 감지 — Gemini Flash Lite가 입력 단어를 분석해 도메인 후보 반환
 	// 한글+영문 혼합 입력은 이미 도메인 명시로 간주, LLM 호출 스킵 (latency/비용 절감)
 	// 반환: null (모호 아님) 또는 { word, domains: [{label, value}] }
-	static async _detectAmbiguousTopic(topic) {
+	// 14회차 2회차(2026-05-01): 검색 결과를 LLM 컨텍스트에 주입해 컷오프 회피.
+	//   이전: LLM 사전 지식만으로 모호성 판정 → 2025년 1월 이후 신규 서비스 미인지.
+	//   변경: searchData(웹 검색 N건 + canonical_name)를 함께 전달 →
+	//     검색 결과로 도메인 분포 파악 후 판정.
+	static async _detectAmbiguousTopic(topic, searchData) {
 		// fast path: 한글+영문 혼합 = 도메인 명시로 간주
 		if (topic.split(/\s+/).length >= 2 && /[가-힣]/.test(topic) && /[a-zA-Z]/.test(topic)) {
 			return null;
 		}
+		// fast path 2: 검색 결과 N건이 모두 같은 도메인이면 모호하지 않음 — LLM 호출 전 결정론적 컷
+		const hits = searchData?.webResults || [];
+		const webContext = hits.length > 0
+			? hits.slice(0, 8).map((r, i) => `[${i + 1}] ${r.title}\n${r.snippet}`).join("\n\n")
+			: "검색 결과 없음 (LLM 사전 지식으로 판정)";
+		const canonicalHint = searchData?.canonicalName ? `\n\n[정식 명칭] ${searchData.canonicalName}` : "";
 		try {
 			const result = await ApiClient.callAgent(
-				`당신은 기술 블로그 주제 모호성 감지 전문가입니다. 사용자가 입력한 단어/구절을 분석하세요.
+				`당신은 기술 블로그 주제 모호성 감지 전문가입니다. 사용자 입력 + 실시간 웹 검색 결과를 함께 분석해 도메인 모호성을 판정합니다.
 
 🚨 판정 기준:
-- **모호함 (is_ambiguous: true)**: 같은 단어가 2개 이상의 서로 다른 기술 도메인에서 핵심 용어로 쓰임.
-  예: '플러그인' → 브라우저/IDE/WordPress/게임 / '캐시' → CPU/Redis/브라우저 / 'Reflow' → CSS/SMT
-- **명확함 (is_ambiguous: false)**: 단일 도메인에서만 의미가 명확.
-  예: 'OAuth2 인증' / 'Kubernetes' / 'GraphQL' / '이미 한글+영문 도메인 명시된 입력'
+- **모호함 (is_ambiguous: true)**: 검색 결과가 2개 이상의 서로 다른 도메인을 포함하거나, 단어 자체가 다중 의미.
+  예: '플러그인' → 브라우저/IDE/WordPress/게임 / '캐시' → CPU/Redis/브라우저 / '바이브' → 음악 앱/감성 디자인
+- **명확함 (is_ambiguous: false)**: 검색 결과가 단일 도메인에 집중되거나 입력에 도메인이 명시됨.
+
+🔎 판정 로직:
+1. 웹 검색 결과를 먼저 본다 — 결과 8건이 한 도메인이면 명확. 2~3개 도메인으로 분산되면 모호.
+2. 검색 결과 없으면 LLM 사전 지식으로 판정.
+3. 신규 서비스/제품(2025년 이후 등장한 SaaS 등)은 검색 결과로만 식별 가능 — 사전 지식 없어도 검색 결과의 도메인 분포로 판정하라.
 
 모호하면 도메인 후보 2~5개 반환:
 - label: 이모지 + 한글 도메인 설명 (예: "🌐 브라우저 확장 (Chrome/Firefox)")
 - value: 그 도메인으로 명확화된 입력 토픽 (예: "Chrome 확장 프로그램")
 
 명확하면 빈 배열 반환.`,
-				[`사용자 입력: "${topic}"`],
+				[`[사용자 입력] "${topic}"${canonicalHint}\n\n[웹 검색 결과 ${hits.length}건]\n${webContext}`],
 				{
 					model: Config.MODEL, // Gemini Flash Lite (빠르고 저렴)
 					thinking_budget: 512,
@@ -1089,7 +1112,53 @@ class Pipeline {
 	}
 
 	// Phase 1: 웹 검색 + 주제 분석
-	async _phase1(topic, tone, ratio) {
+	// 14회차(2026-05-01): 웹 검색을 _phase1에서 분리. 모호성 감지에 결과를 주입해 LLM 컷오프 회피.
+	//   호출 순서: run() → _searchWebForTopic() → _detectAmbiguousTopic(topic, searchData)
+	//             → (모호하면 사용자 선택) → _phase1(topic, ..., searchData) (캐시 재사용)
+	//   효과: 추가 호출 0회, 추가 시간 0초, 컷오프 무관 (실시간 검색 결과로 모호성 판정).
+	async _searchWebForTopic(topic) {
+		let webResults = null;
+		let canonicalName = null;
+		let updatedTopic = topic;
+		try {
+			const searchRes = await fetch("/api/search", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ query: topic }),
+			});
+			if (searchRes.ok) {
+				const data = await searchRes.json();
+				webResults = data.results || [];
+				canonicalName = data.canonical_name || null;
+				console.log(`DuckDuckGo: ${webResults.length}건, canonical=${canonicalName}`);
+				if (canonicalName) {
+					updatedTopic = `${canonicalName} (사용자 입력: ${topic})`;
+				}
+			}
+		} catch (e) {
+			console.warn("DuckDuckGo 검색 실패:", e.message);
+		}
+		const needsFallback = !webResults || webResults.length === 0;
+		if (needsFallback) {
+			console.log("DuckDuckGo 결과 부족 → Perplexity Sonar fallback");
+			try {
+				const fb = await this._searchWithSonarFallback(topic);
+				if (fb.results && fb.results.length > 0) {
+					webResults = fb.results;
+					canonicalName = fb.canonical_name || canonicalName;
+					console.log(`Sonar fallback: ${webResults.length}건, canonical=${canonicalName}`);
+					if (canonicalName && !updatedTopic.includes(canonicalName)) {
+						updatedTopic = `${canonicalName} (사용자 입력: ${topic})`;
+					}
+				}
+			} catch (e) {
+				console.warn("Sonar fallback 검색도 실패:", e.message);
+			}
+		}
+		return { webResults: webResults || [], canonicalName, topic: updatedTopic };
+	}
+
+	async _phase1(topic, tone, ratio, prefetchedSearch) {
 		// 14회차(2026-05-01): phase1 done → phase2a spinner 빈 시간 결함 해결.
 		//   문제: PipelineUI.timed("phase1", ...)가 LLM 호출만 감싸면 이후 Adequacy 평가 ~10초간
 		//          phase1이 done(✓)으로 마크된 채로 phase2a는 waiting(II) 상태로 멈춰 보임.
@@ -1099,45 +1168,17 @@ class Pipeline {
 		try {
 		const result = await (async () => {  // 14회차: timed 대신 IIFE 사용 — phase1 done 시점 수동 제어
 			let researchContext = "";
-			let webResults = null;
-			let canonicalName = null;
-			// 1단계: 실제 웹 검색 (DuckDuckGo via /api/search)
-			try {
-				const searchRes = await fetch("/api/search", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ query: topic }),
-				});
-				if (searchRes.ok) {
-					const data = await searchRes.json();
-					webResults = data.results || [];
-					canonicalName = data.canonical_name || null;
-					console.log(`DuckDuckGo: ${webResults.length}건, canonical=${canonicalName}`);
-					if (canonicalName) {
-						topic = `${canonicalName} (사용자 입력: ${topic})`;
-					}
-				}
-			} catch (e) {
-				console.warn("DuckDuckGo 검색 실패:", e.message);
-			}
-
-			// 2단계 fallback: DuckDuckGo 실패/공백 → Gemini Lite + google_search
-			const needsFallback = !webResults || webResults.length === 0;
-			if (needsFallback) {
-				console.log("DuckDuckGo 결과 부족 → Perplexity Sonar fallback");
-				try {
-					const fb = await this._searchWithSonarFallback(topic);
-					if (fb.results && fb.results.length > 0) {
-						webResults = fb.results;
-						canonicalName = fb.canonical_name || canonicalName;
-						console.log(`Gemini fallback: ${webResults.length}건, canonical=${canonicalName}`);
-						if (canonicalName && !topic.includes(canonicalName)) {
-							topic = `${canonicalName} (사용자 입력: ${topic})`;
-						}
-					}
-				} catch (e) {
-					console.warn("Gemini fallback 검색도 실패:", e.message);
-				}
+			// 14회차 2회차: prefetched 검색 결과 재사용 (모호성 감지에서 이미 호출됨).
+			//   canonicalName은 _searchWebForTopic이 이미 topic에 반영했으므로 여기선 webResults만 사용.
+			let webResults = prefetchedSearch?.webResults || null;
+			if (prefetchedSearch?.topic) topic = prefetchedSearch.topic;
+			// prefetched 없으면 (직접 호출 케이스) 여기서 검색
+			if (!webResults || webResults.length === 0) {
+				const fresh = await this._searchWebForTopic(topic);
+				webResults = fresh.webResults;
+				topic = fresh.topic;
+			} else {
+				console.log(`[Phase 1] 모호성 감지 단계의 검색 결과 재사용 (${webResults.length}건)`);
 			}
 
 			// 2단계: 검색 결과를 LLM에 전달해서 구조화된 조사 리포트 생성
