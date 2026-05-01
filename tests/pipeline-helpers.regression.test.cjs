@@ -73,11 +73,11 @@ function describe(name, fn) {
 }
 
 // =============================================================================
-// 1. _safeTopic — 60자 한도 + 단어/괄호 경계
+// 1. _safeTopic — 약어 추출 + 단어 경계 + … 없는 깔끔 cut (14회차 2회차)
 // =============================================================================
-describe("_safeTopic: 60자 이내는 그대로", () => {
+describe("_safeTopic: 50자 이내는 그대로 (약어/괄호 없음)", () => {
 	assert(Pipeline._safeTopic("API 게이트웨이") === "API 게이트웨이", "짧은 토픽 그대로");
-	assert(Pipeline._safeTopic("DRAM (Dynamic Random-Access Memory)") === "DRAM (Dynamic Random-Access Memory)", "35자 토픽 그대로");
+	assert(Pipeline._safeTopic("DRAM 메모리") === "DRAM 메모리", "짧은 토픽 그대로 (괄호 없음)");
 });
 
 describe("_safeTopic: 빈 입력 → '기술 블로그' fallback", () => {
@@ -86,28 +86,20 @@ describe("_safeTopic: 빈 입력 → '기술 블로그' fallback", () => {
 	assert(Pipeline._safeTopic(undefined) === "기술 블로그", "undefined");
 });
 
-describe("_safeTopic: 60자 초과 + 괄호 경계 우선 자르기", () => {
-	const long = "Cassandra (Distributed Wide-Column NoSQL Database with Tunable Consistency)";
-	const out = Pipeline._safeTopic(long);
-	assert(out.length <= 65, `60자 한도 (실제 ${out.length}자: ${out})`);
-	// 괄호 경계가 30자 이후에 있으면 ')'에서 자름
-	if (out.endsWith(")")) {
-		assert(true, "괄호 경계에서 자름");
-	}
+describe("_safeTopic: 약어 + 괄호풀네임 → 약어만 추출 (14회차 2회차)", () => {
+	// 실 사용자 케이스: CI/CD (Continuous Integration ...) → CI/CD
+	assert(Pipeline._safeTopic("CI/CD (Continuous Integration and Continuous Deployment)") === "CI/CD", "CI/CD 약어 추출");
+	assert(Pipeline._safeTopic("GAN (Generative Adversarial Network)") === "GAN", "GAN 약어 추출");
+	assert(Pipeline._safeTopic("DRAM (Dynamic Random-Access Memory)") === "DRAM", "DRAM 약어 추출");
+	assert(Pipeline._safeTopic("인공지능 (Artificial Intelligence)") === "인공지능", "한글 약어 추출");
 });
 
-describe("_safeTopic: 괄호 없으면 공백 경계, 없으면 강제 cut + …", () => {
-	// 공백/괄호 없는 긴 문자열 — 65자 초과로 강제 cut 발동
-	const long = "단어".repeat(35); // 70자
+describe("_safeTopic: 50자 초과 + 단어 경계 cut (… 없이)", () => {
+	// 공백 있는 긴 문자열 → 공백 경계에서 깔끔히 자르고 … 안 붙음
+	const long = "기술 주제 ".repeat(30);
 	const out = Pipeline._safeTopic(long);
-	assert(out.endsWith("…"), `공백/괄호 없으면 ... (실제 끝 3글자: '${out.slice(-3)}', 길이 ${out.length})`);
-});
-
-describe("_safeTopic: 공백 있는 긴 문자열은 공백 경계에서 자름", () => {
-	const long = "기술 주제 ".repeat(30); // 충분히 긴 공백 포함
-	const out = Pipeline._safeTopic(long);
-	// 공백에서 잘리면 끝이 …
-	assert(out.endsWith("…"), `공백 경계 cut + ... (실제: '${out.slice(-5)}')`);
+	assert(out.length <= 50, `50자 이내 (실제 ${out.length})`);
+	assert(!out.endsWith("…"), `… 없이 깔끔 (실제: '${out.slice(-5)}')`);
 });
 
 // =============================================================================

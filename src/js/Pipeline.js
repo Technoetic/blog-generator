@@ -609,14 +609,23 @@ class Pipeline {
 	// 예: "DRAM (Dynamic Random-Access Memory)" → 그대로 (35자)
 	//     매우 긴 토픽은 60자 이내 마지막 ')' 또는 공백에서 자름
 	static _safeTopic(topic) {
+		// 14회차(2026-05-01): 긴 topic 줄임 정책 개선.
+		//   이전: 60자 cutoff + "…" 추가 → "CI/CD (Continuous Integration and Continuous…"
+		//     처럼 괄호 미닫힘 + 의미 끊김. Blogger는 추가로 CSS-truncate해 두 번 잘림.
+		//   변경:
+		//     1) 약어 + 괄호풀네임 패턴 ("CI/CD (Continuous Integration ...)") 감지 시
+		//        괄호 *전체 제거*하고 약어만 사용 ("CI/CD") → 짧고 의미 보존.
+		//     2) 그래도 50자 초과 시 마지막 단어 경계에서 깔끔히 끊고 "…" 없이 종료
+		//        (jagged "…"가 SEO/UX 모두 나쁨).
 		const raw = (topic || "기술 블로그").trim();
-		if (raw.length <= 60) return raw;
-		const end = 60;
-		const lastClose = raw.lastIndexOf(")", end);
-		if (lastClose >= 30) return raw.substring(0, lastClose + 1);
-		const lastSpace = raw.lastIndexOf(" ", end - 1);
-		if (lastSpace >= 30) return raw.substring(0, lastSpace) + "…";
-		return raw.substring(0, end) + "…";
+		// 패턴 1: "약어 (풀 네임)" → 약어만
+		const abbrev = raw.match(/^([A-Za-z0-9가-힣\/\-]{2,15})\s*\([^)]+\)\s*$/);
+		if (abbrev) return abbrev[1];
+		if (raw.length <= 50) return raw;
+		// 패턴 2: 단어 경계에서 깔끔히 자르기 (… 없이)
+		const lastSpace = raw.lastIndexOf(" ", 50);
+		if (lastSpace >= 20) return raw.substring(0, lastSpace);
+		return raw.substring(0, 50);
 	}
 
 	// 다층 방어 제목 합성 (L1~L5):
