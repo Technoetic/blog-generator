@@ -1919,7 +1919,7 @@ A6: 비유 본질 매핑 검증 — confirmed_analogy + structure_mapping을 보
 					`당신은 비유 블로그 전문 작가입니다. 풍부한 시각 요소가 포함된 한국어 블로그를 작성합니다.
 ## 소제목 규칙: 기계적 라벨("핵심 정리","대응표","마무리") 금지. 비유 스토리에서 자연스러운 한국어 제목 사용.
 ## 시각화: 테이블 2+, mermaid 다이어그램 2+, 인용블록 3+, 구분선 4+, 소제목 6+
-## 분량: 친근 3000~5000 / 전문 4000~6000 / 유머 2500~4000
+## 분량 (코드블록 제외 prose 본문 기준): 친근 2500~4000 / 전문 3500~5000 / 유머 2000~3500
 
 ## 절대 규칙 (렌더링 깨짐 방지)
 - 시각 다이어그램은 반드시 mermaid 코드블록으로 작성하라:
@@ -2090,6 +2090,11 @@ A6: 비유 본질 매핑 검증 — confirmed_analogy + structure_mapping을 보
 			const bodyLen = body.length;
 			const ascii = this._countAsciiDiagrams(body);
 			const headings = this._countHeadings(body);
+			// 14회차(2026-05-01): 본문 길이는 *코드블록(mermaid + ```) 제외 + 공백 압축* 기준으로 측정.
+			//   이전: body.length 그대로 사용 → mermaid가 길면 본문 텍스트는 짧아도 통과 / 공백·줄바꿈 많으면 거품 통과.
+			//   변경: prose 길이 = 코드블록 제거 후 연속 공백 1개로 압축한 길이. LLM 분량 가이드와 일치.
+			const proseOnly = body.replace(/```[a-zA-Z]*\n[\s\S]*?```/g, "").replace(/\s+/g, " ").trim();
+			const proseLen = proseOnly.length;
 			// 이상 출력 감지 (JSON-in-JSON, 과도한 패딩, 단일 라인 폭주, 공백 폭증)
 			const tooLong = bodyLen > 50000; // 정상 블로그는 5~15K, 50K 초과 시 깨짐
 			const jsonInJson = /```?json[\s\S]{0,50}["']?body["']?\s*:/.test(body);
@@ -2099,12 +2104,14 @@ A6: 비유 본질 매핑 검증 — confirmed_analogy + structure_mapping을 보
 			const nonWs = body.replace(/\s/g, "").length;
 			const wsRatio = bodyLen > 0 ? (bodyLen - nonWs) / bodyLen : 0;
 			const wsFlood = wsRatio > 0.8 || / {1000,}|\t{1000,}/.test(body);
-			console.log(`Phase 2b 검증 (attempt ${attempt}): body=${bodyLen}자, ascii=${ascii}, 헤딩=${headings}, 최장줄=${maxLineLen}자, 공백비율=${(wsRatio * 100).toFixed(1)}%`);
+			console.log(`Phase 2b 검증 (attempt ${attempt}): body=${bodyLen}자(prose=${proseLen}), ascii=${ascii}, 헤딩=${headings}, 최장줄=${maxLineLen}자, 공백비율=${(wsRatio * 100).toFixed(1)}%`);
 
-			// 톤별 길이 임계 (Agent ② 프롬프트의 분량 가이드와 일치)
-			const minByTone = { "친근": 3000, "전문": 4000, "유머": 2500 };
-			const minLen = minByTone[tone] || 3000;
-			const tooShort = bodyLen < minLen;
+			// 14회차(2026-05-01): 톤별 임계를 prose 기준으로 재정의 + 10% grace 완화.
+			//   이전: 친근 3000 (body.length, 공백 포함) → 2954자(공백 26%면 prose ~2185자)도 FAIL
+			//   변경: prose 길이로 측정해 친근 2200, 전문 3000, 유머 1800. mermaid·공백 중복카운트 제거.
+			const minByTone = { "친근": 2200, "전문": 3000, "유머": 1800 };
+			const minLen = minByTone[tone] || 2200;
+			const tooShort = proseLen < minLen;
 			const noAscii = ascii < 2;
 			const noHeadings = headings < 4;
 			// 본문 끝 비완결 감지: finish_reason "length" 또는 마지막 문장이 종결부호로 끝나지 않음
@@ -2128,7 +2135,7 @@ A6: 비유 본질 매핑 검증 — confirmed_analogy + structure_mapping을 보
 
 			const reasons = [];
 			if (truncated) reasons.push(`본문 잘림 감지 (finish=${this.results.blogFinishReason || "?"}, 끝="${trimmedTail.slice(-30)}")`);
-			if (tooShort) reasons.push(`본문이 너무 짧음(${bodyLen}자, ${tone} 톤 최소 ${minLen}자 필요)`);
+			if (tooShort) reasons.push(`본문이 너무 짧음(prose ${proseLen}자, ${tone} 톤 최소 ${minLen}자 필요)`);
 			if (noAscii) reasons.push(`mermaid 다이어그램 부족(${ascii}개, 최소 2개 필요)`);
 			if (noHeadings) reasons.push(`소제목(##/###) 부족(${headings}개, 최소 4개 필요)`);
 			if (tooLong) reasons.push(`본문이 비정상적으로 김(${bodyLen}자, 50000자 초과)`);
@@ -2142,7 +2149,7 @@ A6: 비유 본질 매핑 검증 — confirmed_analogy + structure_mapping을 보
 				`이전 글이 검증 실패. 사유: ${reasons.join(" / ")}.
 
 🚨 절대 규칙 (이번엔 반드시 지킬 것):
-1. body는 최소 4000자 이상.
+1. body 본문(코드블록 제외 prose 기준)은 최소 ${minLen}자 이상.
 2. mermaid 다이어그램을 정확히 2개 이상 포함:
    \`\`\`mermaid
    graph TD
