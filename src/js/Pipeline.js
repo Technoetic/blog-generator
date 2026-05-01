@@ -1605,8 +1605,8 @@ reasoning: 4차원별 매핑 평가 (200자 이내, 한 줄).
 - 마크다운 헤더(#, ##, ###), 굵게(**), 이모지 ✅⚠️ 등 사용 절대 금지.
 - 출력은 *오직 JSON 객체 하나*. {로 시작 }로 끝. 앞뒤에 텍스트/설명/주석 금지.
 - 모든 점수는 정수(0~10). dimension_scores의 input/mechanism/output/conflict 각각 0~10 정수.
-- 예시 (이대로 형식 따라라):
-{"adequacy_score":8,"verdict":"PASS","reasoning":"입력은 화학원료↔독성성분으로 매핑, 메커니즘은 합성공정↔주입행위로 부분 매핑, 출력은 색소품질↔독성효과로 매핑, 갈등은 안전성↔치명성으로 명확.","dimension_scores":{"input":8,"mechanism":7,"output":8,"conflict":9},"alternatives":[]}`,
+- 예시 (형식만 참고하라. 내용은 입력 비유에 맞게 직접 평가):
+{"adequacy_score":<0~10정수>,"verdict":"<PASS|FAIL>","reasoning":"<200자 이내 4차원 평가>","dimension_scores":{"input":<0~10>,"mechanism":<0~10>,"output":<0~10>,"conflict":<0~10>},"alternatives":[<FAIL시 비유 후보 3개>]}`,
 				[
 					JSON.stringify({
 						topic: this.results.contextPacket?.topic,
