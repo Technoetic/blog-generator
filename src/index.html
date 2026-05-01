@@ -82,10 +82,12 @@
     </div>
 
     <!-- 파이프라인 상태 -->
-    <div class="pipeline" id="pipeline">
+    <!-- 8회차 보강 (GG7): 진행 상황 영역에 aria-live="polite" + role="region" + aria-label로
+         스크린리더가 phase 전환을 음성으로 안내하도록 함 (시각 의존 사용자 접근성) -->
+    <div class="pipeline" id="pipeline" role="region" aria-label="파이프라인 진행 상황" aria-live="polite">
       <div class="pipeline-header">
         <h2>파이프라인 진행 상황</h2>
-        <div class="overall-gauge">
+        <div class="overall-gauge" role="progressbar" aria-label="전체 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="overallGauge">
           <div class="overall-gauge-fill" id="overallGaugeFill"></div>
           <div class="overall-gauge-label" id="overallGaugeLabel">0.0%</div>
         </div>
@@ -102,7 +104,7 @@
       <div class="phase waiting" id="phase2a">
         <div class="phase-icon">II</div>
         <div class="phase-main">
-          <div class="phase-label">비유 설계 (최대 3회 재시도 + 검증)</div>
+          <div class="phase-label">비유 설계 (Designer ① → Adequacy ⑦ → Verify ④, 최대 3회 재시도)</div>
           <div class="phase-substatus" id="phase2a-sub"></div>
         </div>
         <div class="phase-gauge"><div class="phase-gauge-fill" id="phase2a-gauge"></div><span class="phase-gauge-pct" id="phase2a-pct">0%</span></div>
@@ -138,7 +140,7 @@
       <div class="phase waiting" id="phase3c">
         <div class="phase-icon">VI</div>
         <div class="phase-main">
-          <div class="phase-label">이미지 생성 (Nano Banana 7회 재시도 + 손그림 다이어그램)</div>
+          <div class="phase-label">이미지 생성 (Nano Banana 4회 재시도 + 손그림 다이어그램)</div>
           <div class="phase-substatus" id="phase3c-sub"></div>
         </div>
         <div class="phase-gauge"><div class="phase-gauge-fill" id="phase3c-gauge"></div><span class="phase-gauge-pct" id="phase3c-pct">0%</span></div>
@@ -163,31 +165,32 @@
         <div class="phase-time" id="phase5-time"></div>
       </div>
 
-      <div class="cost-bar" id="costBar" style="display:none;">
+      <!-- 8회차 보강 (GG7): role="status" + aria-live="polite"로 토큰/비용 변경을 스크린리더에 안내 -->
+      <div class="cost-bar" id="costBar" style="display:none;" role="status" aria-live="polite" aria-label="토큰·비용·시간 통계">
         <div class="cost-stats">
           <div class="cost-stat">
-            <span class="cost-icon">⚡</span>
+            <span class="cost-icon" aria-hidden="true">⚡</span>
             <span class="cost-label">토큰</span>
-            <span id="totalTokens" class="cost-value">0</span>
-            <span class="cost-rate" id="tokensRate"></span>
+            <span id="totalTokens" class="cost-value" aria-label="총 토큰">0</span>
+            <span class="cost-rate" id="tokensRate" aria-label="초당 토큰 발생량"></span>
           </div>
           <div class="cost-stat">
-            <span class="cost-icon">💎</span>
+            <span class="cost-icon" aria-hidden="true">💎</span>
             <span class="cost-label">비용</span>
-            <span id="totalCost" class="cost-value">₩0</span>
+            <span id="totalCost" class="cost-value" aria-label="총 비용">₩0</span>
           </div>
           <div class="cost-stat">
-            <span class="cost-icon">⏱</span>
+            <span class="cost-icon" aria-hidden="true">⏱</span>
             <span class="cost-label">소요</span>
-            <span id="totalTime" class="cost-value">0초</span>
+            <span id="totalTime" class="cost-value" aria-label="총 소요 시간">0초</span>
           </div>
         </div>
         <div class="cost-progress">
-          <div class="cost-bar-track">
+          <div class="cost-bar-track" role="progressbar" aria-label="비용 진행 막대" aria-valuemin="0" aria-valuemax="150" aria-valuenow="0" id="costBarTrack">
             <div class="cost-bar-fill" id="costBarFill"></div>
-            <div class="cost-milestone" data-mile="50" style="left:33%"><span>₩50</span></div>
-            <div class="cost-milestone" data-mile="100" style="left:66%"><span>₩100</span></div>
-            <div class="cost-milestone" data-mile="150" style="left:100%"><span>₩150</span></div>
+            <div class="cost-milestone" data-mile="50" style="left:33%" aria-hidden="true"><span>₩50</span></div>
+            <div class="cost-milestone" data-mile="100" style="left:66%" aria-hidden="true"><span>₩100</span></div>
+            <div class="cost-milestone" data-mile="150" style="left:100%" aria-hidden="true"><span>₩150</span></div>
           </div>
         </div>
       </div>
